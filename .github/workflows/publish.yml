@@ -24,8 +24,10 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
-      - run: npm run typecheck
+      # Build first: the React/Next adapters typecheck against @whisperr/web's
+      # generated .d.ts, which only exists after the core is built.
       - run: npm run build
+      - run: npm run typecheck
       - run: npm publish -w @whisperr/web
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
