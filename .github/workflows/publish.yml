@@ -1,0 +1,37 @@
+name: Publish
+
+# Publishes all @whisperr/* web packages when a version tag is pushed:
+#   git tag v0.1.0 && git push origin v0.1.0
+# Requires repo secret NPM_TOKEN (npm automation token with publish rights to
+# the @whisperr scope). Publishes in dependency order: web -> react -> next.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm publish -w @whisperr/web
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: npm publish -w @whisperr/react
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: npm publish -w @whisperr/next
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

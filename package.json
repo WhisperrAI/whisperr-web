@@ -1,0 +1,20 @@
+{
+  "name": "whisperr-web-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Whisperr web SDKs — framework-agnostic core + React/Next adapters.",
+  "workspaces": [
+    "packages/web",
+    "packages/react",
+    "packages/next"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "tsup": "^8.2.4",
+    "typescript": "^5.6.2",
+    "@types/node": "^22.5.0"
+  }
+}
