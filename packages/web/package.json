@@ -1,7 +1,7 @@
 {
   "name": "@whisperr/web",
-  "version": "0.1.2",
-  "description": "Whisperr web SDK — tiny, reliable churn-signal event tracking for any JavaScript app.",
+  "version": "0.1.3",
+  "description": "Whisperr web SDK \u2014 tiny, reliable churn-signal event tracking for any JavaScript app.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,10 +14,16 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
-  "engines": { "node": ">=18" },
-  "publishConfig": { "access": "public" },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -29,5 +35,11 @@
     "tsup": "^8.2.4",
     "typescript": "^5.6.2",
     "vitest": "^2.1.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WhisperrAI/whisperr-web.git",
+    "directory": "packages/web"
+  },
+  "homepage": "https://github.com/WhisperrAI/whisperr-web#readme"
 }

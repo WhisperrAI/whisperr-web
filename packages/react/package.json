@@ -1,7 +1,7 @@
 {
   "name": "@whisperr/react",
-  "version": "0.1.2",
-  "description": "React bindings for the Whisperr web SDK — provider + hooks.",
+  "version": "0.1.3",
+  "description": "React bindings for the Whisperr web SDK \u2014 provider + hooks.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,19 +14,32 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
-  "peerDependencies": { "react": ">=17" },
-  "dependencies": { "@whisperr/web": "^0.1.0" },
+  "peerDependencies": {
+    "react": ">=17"
+  },
+  "dependencies": {
+    "@whisperr/web": "^0.1.0"
+  },
   "devDependencies": {
     "@types/react": "^18.3.0",
     "react": "^18.3.0",
     "tsup": "^8.2.4",
     "typescript": "^5.6.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WhisperrAI/whisperr-web.git",
+    "directory": "packages/react"
   }
 }
