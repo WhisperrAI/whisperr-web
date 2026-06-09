@@ -1,8 +1,8 @@
 {
   "name": "@whisperr/next",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Next.js bindings for the Whisperr web SDK — a client-boundary provider for the App Router.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",

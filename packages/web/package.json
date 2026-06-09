@@ -1,8 +1,8 @@
 {
   "name": "@whisperr/web",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Whisperr web SDK — tiny, reliable churn-signal event tracking for any JavaScript app.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
