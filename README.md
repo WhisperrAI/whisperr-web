@@ -23,4 +23,4 @@ npm run build        # builds all packages (web first)
 npm run typecheck
 ```
 
-Publishing is automated: push a `vX.Y.Z` tag and CI publishes all three packages (requires the `NPM_TOKEN` repo secret).
+Publishing is automated via npm Trusted Publishing (OIDC, no stored token): push a `vX.Y.Z` tag and CI builds, tests, and publishes all three packages with provenance.

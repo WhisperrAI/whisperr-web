@@ -1,9 +1,13 @@
 name: Publish
 
 # Publishes all @whisperr/* web packages when a version tag is pushed:
-#   git tag v0.1.0 && git push origin v0.1.0
-# Requires repo secret NPM_TOKEN (npm automation token with publish rights to
-# the @whisperr scope). Publishes in dependency order: web -> react -> next.
+#   git tag v0.1.2 && git push origin v0.1.2
+#
+# Auth: npm Trusted Publishing (OIDC) — NO stored token. Configure a Trusted
+# Publisher for each package on npmjs.com (Settings → Publishing access →
+# GitHub Actions: repo WhisperrAI/whisperr-web, workflow publish.yml,
+# environment production). Publishes in dependency order: web -> react -> next,
+# with provenance attestations (requires a public repo).
 
 on:
   push:
@@ -12,6 +16,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write # required for OIDC trusted publishing + provenance
 
 jobs:
   publish:
@@ -21,21 +26,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           registry-url: "https://registry.npmjs.org"
+      # Trusted publishing + provenance needs a recent npm (>= 11.5.1).
+      - run: npm install -g npm@latest
       - run: npm ci
-      # Build first: the React/Next adapters typecheck against @whisperr/web's
-      # generated .d.ts, which only exists after the core is built.
       - run: npm run build
       - run: npm run typecheck
       - run: npm test -w @whisperr/web
       - run: npm run size -w @whisperr/web
-      - run: npm publish -w @whisperr/web
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: npm publish -w @whisperr/react
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: npm publish -w @whisperr/next
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: npm publish -w @whisperr/web --provenance
+      - run: npm publish -w @whisperr/react --provenance
+      - run: npm publish -w @whisperr/next --provenance
