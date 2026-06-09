@@ -10,6 +10,7 @@ import {
   nowISO,
   pageContext,
   setUserId,
+  uuid,
   type KVStore,
 } from "./runtime.js";
 import type {
@@ -18,6 +19,7 @@ import type {
   TrackOp,
   WhisperrApi,
   WhisperrChannel,
+  WhisperrError,
   WhisperrOptions,
 } from "./types.js";
 
@@ -35,11 +37,12 @@ export class WhisperrClient implements WhisperrApi {
   private readonly maxBatchSize: number;
   private readonly maxRetries: number;
   private readonly debug: boolean;
+  private readonly onError?: (error: WhisperrError) => void;
 
   private userId: string | null = null;
   private anonId = "";
   private muted: boolean; // opted out / disabled / DNT — capture is a no-op
-  private draining = false;
+  private drainChain: Promise<void> = Promise.resolve();
   private flushTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: WhisperrOptions) {
@@ -48,6 +51,7 @@ export class WhisperrClient implements WhisperrApi {
     this.maxBatchSize = Math.min(options.maxBatchSize ?? 500, 500);
     this.maxRetries = options.maxRetries ?? 6;
     this.debug = options.debug ?? false;
+    this.onError = options.onError;
 
     this.store = makeStore(options.persistence ?? "localStorage");
     this.queue = new DurableQueue(this.store, options.maxQueueSize ?? 1000);
@@ -97,6 +101,7 @@ export class WhisperrClient implements WhisperrApi {
       properties,
       context: { ...pageContext(this.store), ...context },
       occurredAt: nowISO(),
+      messageId: uuid(),
     });
     if (this.sendableCount() >= this.flushAt) void this.flush();
   }
@@ -123,38 +128,80 @@ export class WhisperrClient implements WhisperrApi {
   }
 
   async flush(): Promise<void> {
-    if (this.muted || this.draining) return;
-    this.draining = true;
-    try {
-      let retries = 0;
-      while (this.queue.size > 0) {
-        const ops = this.queue.all;
-        const front = ops[0]!;
-        if (front.kind === "track" && front.externalUserId === null) break; // buffered pre-identify
+    if (this.muted) return;
+    // Serialize drains and guarantee that awaiting flush() waits for a drain
+    // pass that runs AFTER this call — so `await whisperr.flush()` before logout
+    // actually delivers everything queued, even if a background flush is mid-send.
+    const next = this.drainChain.then(() => this.lockedDrain()).catch(() => {});
+    this.drainChain = next;
+    await next;
+  }
 
-        let result: SendResult;
-        let count: number;
-        if (front.kind === "identify") {
-          result = await this.transport.sendIdentify(front);
-          count = 1;
-        } else {
-          const batch = this.takeTrackBatch(ops);
-          result = await this.transport.sendBatch(batch);
-          count = batch.length;
-        }
+  private async lockedDrain(): Promise<void> {
+    if (this.muted) return;
+    // Cross-tab safety: only one tab drains the shared queue at a time. The Web
+    // Locks API serializes across tabs; ifAvailable:true means we skip (rather
+    // than wait) when another tab already holds the lock.
+    const locks =
+      (typeof navigator !== "undefined" &&
+        (navigator as Navigator & { locks?: LockManager }).locks) ||
+      null;
+    if (locks && typeof locks.request === "function") {
+      await locks.request("whisperr.flush", { ifAvailable: true }, async (lock) => {
+        if (lock) await this.drain();
+      });
+    } else {
+      await this.drain();
+    }
+  }
 
-        if (result === "ok" || result === "drop") {
-          this.queue.removeFront(count);
-          retries = 0;
-          continue;
-        }
-        if (result === "auth") break; // pause; keep queue for a later attempt
-        // retry
-        if (++retries > this.maxRetries) break;
-        await delay(backoff(retries));
+  private async drain(): Promise<void> {
+    let retries = 0;
+    while (this.queue.size > 0) {
+      const ops = this.queue.all;
+      const front = ops[0]!;
+      if (front.kind === "track" && front.externalUserId === null) break; // buffered pre-identify
+
+      let result: SendResult;
+      let count: number;
+      if (front.kind === "identify") {
+        result = await this.transport.sendIdentify(front);
+        count = 1;
+      } else {
+        const batch = this.takeTrackBatch(ops);
+        result = await this.transport.sendBatch(batch);
+        count = batch.length;
       }
-    } finally {
-      this.draining = false;
+
+      if (result === "ok") {
+        this.queue.removeFront(count);
+        retries = 0;
+        continue;
+      }
+      if (result === "drop") {
+        this.queue.removeFront(count);
+        retries = 0;
+        this.emit({ type: "dropped", message: `dropped ${count} event(s) — rejected by server` });
+        continue;
+      }
+      if (result === "auth") {
+        this.emit({ type: "auth", message: "delivery paused — API key rejected", status: 401 });
+        break; // keep queue for a later attempt
+      }
+      // retry
+      if (++retries > this.maxRetries) {
+        this.emit({ type: "retry_exhausted", message: "delivery failed after retries; will retry on next flush" });
+        break;
+      }
+      await delay(backoff(retries));
+    }
+  }
+
+  private emit(error: WhisperrError): void {
+    try {
+      this.onError?.(error);
+    } catch {
+      /* host callback threw — ignore */
     }
   }
 
@@ -211,10 +258,11 @@ export class WhisperrClient implements WhisperrApi {
     const ops = this.queue.all;
     if (ops.length === 0) return;
     const front = ops[0]!;
-    if (front.kind === "track" && front.externalUserId === null) {
-      this.queue.persistNow();
-      return;
-    }
+    if (front.kind === "track" && front.externalUserId === null) return; // buffered
+
+    // Optimistically dequeue so a next page load doesn't resend; the keepalive
+    // request survives unload, and each event's $message_id lets the backend
+    // dedup the rare case where it both delivers here and is retried elsewhere.
     if (front.kind === "identify") {
       void this.transport.sendIdentify(front, { keepalive: true });
       this.queue.removeFront(1);
@@ -223,7 +271,6 @@ export class WhisperrClient implements WhisperrApi {
       void this.transport.sendBatch(batch, { keepalive: true });
       this.queue.removeFront(batch.length);
     }
-    this.queue.persistNow();
   }
 
   private installPageviews(): void {

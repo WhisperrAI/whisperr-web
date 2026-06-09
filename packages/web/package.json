@@ -1,6 +1,6 @@
 {
   "name": "@whisperr/web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Whisperr web SDK — tiny, reliable churn-signal event tracking for any JavaScript app.",
   "license": "UNLICENSED",
   "type": "module",
@@ -20,10 +20,14 @@
   "publishConfig": { "access": "public" },
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "size": "node scripts/size-check.mjs"
   },
   "devDependencies": {
+    "jsdom": "^25.0.0",
     "tsup": "^8.2.4",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.0"
   }
 }

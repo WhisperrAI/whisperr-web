@@ -29,7 +29,9 @@ export class Transport {
           event_type: e.eventType,
           occurred_at: e.occurredAt,
           properties: e.properties ?? {},
-          context: e.context ?? {},
+          // $message_id is an idempotency key for backend dedup (nested in the
+          // free-form context so the strict ingestion accepts it).
+          context: { ...(e.context ?? {}), $message_id: e.messageId },
         })),
     };
     if (body.events.length === 0) return "ok";

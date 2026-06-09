@@ -49,6 +49,14 @@ export interface WhisperrOptions {
   requestTimeoutMs?: number;
   /** Max consecutive retries before backing off a drain. Default 6. */
   maxRetries?: number;
+  /** Called when delivery fails (auth/drop/retries exhausted). For observability. */
+  onError?: (error: WhisperrError) => void;
+}
+
+export interface WhisperrError {
+  type: "auth" | "dropped" | "retry_exhausted";
+  message: string;
+  status?: number;
 }
 
 /** The public client surface. */
@@ -82,6 +90,8 @@ export interface TrackOp {
   properties?: Record<string, unknown>;
   context?: Record<string, unknown>;
   occurredAt: string;
+  /** Idempotency key — lets the backend dedup retries / exit-flush resends. */
+  messageId: string;
 }
 
 export type QueuedOp = IdentifyOp | TrackOp;

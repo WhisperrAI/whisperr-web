@@ -28,6 +28,8 @@ jobs:
       # generated .d.ts, which only exists after the core is built.
       - run: npm run build
       - run: npm run typecheck
+      - run: npm test -w @whisperr/web
+      - run: npm run size -w @whisperr/web
       - run: npm publish -w @whisperr/web
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

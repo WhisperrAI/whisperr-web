@@ -2,7 +2,7 @@
 
 export const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
 
-const LIB_VERSION = "0.1.0";
+const LIB_VERSION = "0.1.1";
 
 export function doNotTrackEnabled(): boolean {
   if (!isBrowser) return false;
