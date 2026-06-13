@@ -83,7 +83,7 @@ describe("identity continuity", () => {
     expect(batch?.body.events[0].event_type).toBe("offer_viewed");
 
     const identify = captured.find((c) => c.path === "/v1/identify");
-    expect(identify?.body.channels[0]).toMatchObject({ type: "email", address: "a@b.c" });
+    expect(identify?.body.channels[0]).toMatchObject({ channel: "email", address: "a@b.c" });
   });
 });
 

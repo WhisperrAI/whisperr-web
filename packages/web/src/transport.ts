@@ -45,7 +45,8 @@ export class Transport {
     if (op.traits && Object.keys(op.traits).length) body.traits = op.traits;
     if (op.channels && op.channels.length) {
       body.channels = op.channels.map((c) => ({
-        type: c.type,
+        // wire field is `channel` (the server rejects unknown fields)
+        channel: c.type,
         address: c.address,
         opted_in: c.optedIn ?? true,
       }));
