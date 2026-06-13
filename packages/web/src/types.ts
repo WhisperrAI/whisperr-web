@@ -7,6 +7,8 @@ export interface WhisperrChannel {
   address: string;
   /** Whether the user has opted in to this channel. */
   optedIn?: boolean;
+  /** Whether the address is verified. */
+  verified?: boolean;
 }
 
 export interface IdentifyParams {
@@ -18,6 +20,8 @@ export interface IdentifyParams {
   phone?: string;
   /** Convenience: expands to an opted-in push channel. */
   pushToken?: string;
+  /** Preferred outreach channel. */
+  preferredChannel?: "email" | "sms" | "push";
   /** Full control over channels (overrides the shortcuts when provided). */
   channels?: WhisperrChannel[];
 }
@@ -78,6 +82,7 @@ export interface IdentifyOp {
   kind: "identify";
   externalUserId: string;
   traits?: Record<string, unknown>;
+  preferredChannel?: string;
   channels?: WhisperrChannel[];
   occurredAt: string;
 }

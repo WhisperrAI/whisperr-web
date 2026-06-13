@@ -43,12 +43,14 @@ export class Transport {
       external_user_id: op.externalUserId,
     };
     if (op.traits && Object.keys(op.traits).length) body.traits = op.traits;
+    if (op.preferredChannel) body.preferred_channel = op.preferredChannel;
     if (op.channels && op.channels.length) {
       body.channels = op.channels.map((c) => ({
         // wire field is `channel` (the server rejects unknown fields)
         channel: c.type,
         address: c.address,
         opted_in: c.optedIn ?? true,
+        ...(c.verified !== undefined ? { verified: c.verified } : {}),
       }));
     }
     return this.post("/v1/identify", body, opts);

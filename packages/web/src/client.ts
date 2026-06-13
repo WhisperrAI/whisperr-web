@@ -84,6 +84,7 @@ export class WhisperrClient implements WhisperrApi {
       kind: "identify",
       externalUserId,
       traits: params.traits,
+      preferredChannel: params.preferredChannel,
       channels: buildChannels(params),
       occurredAt: nowISO(),
     });
