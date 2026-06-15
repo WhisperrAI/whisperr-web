@@ -108,7 +108,8 @@ export class WhisperrClient implements WhisperrApi {
   }
 
   page(name?: string, properties?: Record<string, unknown>): void {
-    this.track("$pageview", { name, ...properties });
+    // snake_case to satisfy the ingestion validator (it rejects "$"-prefixed types).
+    this.track("page_viewed", { name, ...properties });
   }
 
   reset(): void {

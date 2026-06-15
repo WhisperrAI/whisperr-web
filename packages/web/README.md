@@ -45,7 +45,7 @@ whisperr.load("wrk_…");
 | `apiKey` | — | required |
 | `baseUrl` | `https://api.whisperr.net` | ingestion base |
 | `flushAt` / `flushIntervalMs` | `20` / `10000` | batch triggers |
-| `autocapturePageviews` | `true` | SPA `$pageview` capture |
+| `autocapturePageviews` | `true` | SPA `page_viewed` capture |
 | `respectDoNotTrack` | `false` | honor DNT |
 | `persistence` | `localStorage` | or `memory` |
 | `debug` | `false` | verbose logging |

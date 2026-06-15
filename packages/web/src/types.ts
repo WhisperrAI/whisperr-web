@@ -39,7 +39,7 @@ export interface WhisperrOptions {
   maxQueueSize?: number;
   /** Max events per batch request (hard backend cap is 500). Default 500. */
   maxBatchSize?: number;
-  /** Auto-capture SPA pageviews ($pageview). Default true. */
+  /** Auto-capture SPA pageviews (page_viewed). Default true. */
   autocapturePageviews?: boolean;
   /** Honor the browser's Do Not Track signal. Default false. */
   respectDoNotTrack?: boolean;
