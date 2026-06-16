@@ -25,6 +25,7 @@ import type {
 
 const OPTOUT_KEY = "whisperr.optout";
 const DEFAULT_BASE = "https://api.whisperr.net";
+const SNAKE_CASE = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
 
 export class WhisperrClient implements WhisperrApi {
   readonly ready: boolean;
@@ -95,9 +96,19 @@ export class WhisperrClient implements WhisperrApi {
 
   track(eventType: string, properties?: Record<string, unknown>, context?: Record<string, unknown>): void {
     if (this.muted || !eventType) return;
+    const type = eventType.trim();
+    if (!type) return;
+    if (!SNAKE_CASE.test(type)) {
+      this.emit({ type: "dropped", message: `invalid event_type "${type}" — expected snake_case` });
+      if (this.debug) {
+        // eslint-disable-next-line no-console
+        console.warn(`[whisperr] invalid event_type "${type}" — event was not queued`);
+      }
+      return;
+    }
     this.enqueue({
       kind: "track",
-      eventType,
+      eventType: type,
       externalUserId: this.userId, // null until identify(); backfilled later
       properties,
       context: { ...pageContext(this.store), ...context },

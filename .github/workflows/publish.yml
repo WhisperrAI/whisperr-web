@@ -24,6 +24,10 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: WhisperrAI/whisperr-spec
+          path: whisperr-spec
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -34,6 +38,8 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm test -w @whisperr/web
+        env:
+          WHISPERR_SPEC_PATH: ${{ github.workspace }}/whisperr-spec/conformance/wire.json
       - run: npm run size -w @whisperr/web
       - run: npm publish -w @whisperr/web --provenance
       - run: npm publish -w @whisperr/react --provenance

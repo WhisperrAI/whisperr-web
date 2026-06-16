@@ -99,6 +99,20 @@ describe("batching", () => {
     expect(batches).toHaveLength(1);
     expect(batches[0]!.body.events).toHaveLength(3);
   });
+
+  it("drops invalid event types before they can poison a batch", async () => {
+    const errors: any[] = [];
+    const w = makeClient({ onError: (e) => errors.push(e) });
+    w.identify("u1");
+    w.track("User Signed Up");
+    w.track("checkout_completed");
+    await w.flush();
+
+    expect(errors.some((e) => e.type === "dropped")).toBe(true);
+    const batch = captured.find((c) => c.path === "/v1/events/batch");
+    expect(batch?.body.events).toHaveLength(1);
+    expect(batch?.body.events[0].event_type).toBe("checkout_completed");
+  });
 });
 
 describe("idempotency", () => {
