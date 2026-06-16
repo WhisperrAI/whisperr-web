@@ -8,6 +8,9 @@ import type { WhisperrError } from "./types.js";
 const SPEC_URL =
   "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/conformance/behavior.json";
 
+// Real fetch captured before we stub the global for request capture.
+const realFetch = globalThis.fetch.bind(globalThis);
+
 interface BehaviorCase {
   name: string;
   op: "track";
@@ -54,7 +57,7 @@ let status = 200;
 async function loadSpec(): Promise<{ cases: BehaviorCase[] }> {
   const local = process.env.WHISPERR_BEHAVIOR_SPEC_PATH ?? siblingBehaviorPath();
   if (local) return JSON.parse(readFileSync(local, "utf8"));
-  const res = await fetch(SPEC_URL);
+  const res = await realFetch(SPEC_URL);
   if (!res.ok) throw new Error(`fetch behavior spec: ${res.status}`);
   return res.json();
 }
