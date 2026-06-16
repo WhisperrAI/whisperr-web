@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { WhisperrClient } from "./client.js";
 
@@ -21,6 +22,8 @@ interface WireCase {
 }
 
 async function loadSpec(): Promise<{ cases: WireCase[] }> {
+  const local = process.env.WHISPERR_SPEC_PATH;
+  if (local) return JSON.parse(readFileSync(local, "utf8"));
   const res = await realFetch(SPEC_URL);
   if (!res.ok) throw new Error(`fetch wire spec: ${res.status}`);
   return res.json();
