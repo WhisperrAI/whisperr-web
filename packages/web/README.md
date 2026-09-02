@@ -24,6 +24,7 @@ whisperr.reset();
 - **~3KB gzipped, zero dependencies.** Off the critical path.
 - **Never loses exit events** — durable queue + `keepalive` flush on page hide.
 - **Anonymous → identified** — events before login attribute to the user on `identify()`.
+- **Timezone + locale by default** — `identify()` fills `traits.timezone` (IANA, from `Intl`) and `traits.locale` (BCP 47, from `navigator.language`) so quiet hours and message language match the user; your own `traits` values always win, and nothing is sent for a value the browser can't provide.
 - **Cookieless** (localStorage), consent-friendly (`optIn()` / `optOut()`), SSR-safe.
 - Auto-captures SPA pageviews; batches to `/v1/events/batch` with retry/backoff.
 

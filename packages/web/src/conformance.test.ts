@@ -3,6 +3,14 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { WhisperrClient } from "./client.js";
 
+// Device-derived trait defaults (timezone / locale) are environment-dependent,
+// so wire.json never pins them (SPEC.md → Reserved trait keys): the harness runs
+// with them disabled so each case's body is exactly the scenario's.
+vi.mock("./runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./runtime.js")>()),
+  deviceTraits: () => ({}),
+}));
+
 const SPEC_URL =
   "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/conformance/wire.json";
 const RFC3339_Z = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;

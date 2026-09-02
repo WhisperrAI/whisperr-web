@@ -2,6 +2,7 @@ import { DurableQueue } from "./queue.js";
 import { Transport, type SendResult } from "./transport.js";
 import {
   clearIdentity,
+  deviceTraits,
   doNotTrackEnabled,
   getOrCreateAnonId,
   getUserId,
@@ -84,7 +85,7 @@ export class WhisperrClient implements WhisperrApi {
     this.enqueue({
       kind: "identify",
       externalUserId,
-      traits: params.traits,
+      traits: withDeviceTraits(params.traits),
       preferredChannel: params.preferredChannel,
       channels: buildChannels(params),
       occurredAt: nowISO(),
@@ -302,6 +303,21 @@ export class WhisperrClient implements WhisperrApi {
     window.addEventListener("popstate", fire);
     fire(); // initial pageview
   }
+}
+
+/** Keys the engine reads for the user's zone; any of them supplied means "don't default `timezone`". */
+const TIMEZONE_KEYS = ["timezone", "time_zone", "tz"];
+
+/**
+ * Fills the reserved `timezone` / `locale` traits from the browser unless the
+ * caller supplied them — caller values always win, and a key the environment
+ * cannot provide is simply absent (see whisperr-spec → Reserved trait keys).
+ */
+function withDeviceTraits(traits: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  const defaults: Record<string, unknown> = deviceTraits();
+  if (traits && TIMEZONE_KEYS.some((k) => k in traits)) delete defaults.timezone;
+  const merged = { ...defaults, ...traits };
+  return Object.keys(merged).length ? merged : undefined;
 }
 
 function buildChannels(params: IdentifyParams): WhisperrChannel[] | undefined {
