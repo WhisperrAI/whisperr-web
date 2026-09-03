@@ -151,3 +151,42 @@ export function pageContext(store: KVStore): Record<string, unknown> {
   }
   return ctx;
 }
+
+// ---- device traits (reserved identify trait keys) ----
+
+/**
+ * Environment-derived defaults for the reserved identify trait keys
+ * (whisperr-spec SPEC.md → "Reserved trait keys"): `timezone` (IANA name, from
+ * Intl) and `locale` (BCP 47, from navigator.language). The engine evaluates
+ * quiet hours / send timing in `timezone` and picks the message language from
+ * `locale`. Only keys the browser can actually provide are returned — never a
+ * guess — and outside a browser (SSR) this is always `{}`.
+ */
+export function deviceTraits(): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!isBrowser) return out;
+  const timezone = resolvedTimeZone();
+  if (timezone) out.timezone = timezone;
+  const locale = browserLocale();
+  if (locale) out.locale = locale;
+  return out;
+}
+
+function resolvedTimeZone(): string | undefined {
+  try {
+    if (typeof Intl === "undefined" || typeof Intl.DateTimeFormat !== "function") return undefined;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof tz === "string" && tz.length > 0 ? tz : undefined;
+  } catch {
+    return undefined; // no tz data / exotic runtime — omit rather than guess
+  }
+}
+
+function browserLocale(): string | undefined {
+  try {
+    const lang = (navigator as Navigator & { language?: string }).language;
+    return typeof lang === "string" && lang.length > 0 ? lang : undefined;
+  } catch {
+    return undefined;
+  }
+}

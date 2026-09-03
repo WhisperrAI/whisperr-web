@@ -230,3 +230,86 @@ describe("consent + reset", () => {
     expect(captured.some((c) => c.path === "/v1/events/batch")).toBe(false);
   });
 });
+
+describe("device traits (reserved identify keys: timezone / locale)", () => {
+  let resolved: ReturnType<typeof vi.spyOn> | null = null;
+
+  /** Pretend the browser reports this zone + language (undefined = unavailable). */
+  function stubDevice(timeZone: string | undefined, language: string | undefined) {
+    resolved = vi
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockReturnValue({ timeZone } as unknown as Intl.ResolvedDateTimeFormatOptions);
+    Object.defineProperty(navigator, "language", { value: language, configurable: true });
+  }
+
+  afterEach(() => {
+    resolved?.mockRestore();
+    resolved = null;
+    delete (navigator as unknown as { language?: string }).language;
+  });
+
+  async function identifyBody(w: WhisperrClient): Promise<any> {
+    await w.flush();
+    return captured.find((c) => c.path === "/v1/identify")!.body;
+  }
+
+  it("fills traits.timezone (IANA) and traits.locale (BCP 47) from the browser", async () => {
+    stubDevice("Europe/Berlin", "de-DE");
+    const w = makeClient();
+    w.identify("u1", { traits: { plan: "pro" } });
+    const body = await identifyBody(w);
+    expect(body.traits).toEqual({ plan: "pro", timezone: "Europe/Berlin", locale: "de-DE" });
+    expect(Object.keys(body)).toEqual(["external_user_id", "traits"]); // still inside traits, never top-level
+  });
+
+  it("populates the defaults even when identify() is called with no params", async () => {
+    stubDevice("America/Sao_Paulo", "pt-BR");
+    const w = makeClient();
+    w.identify("u1");
+    const body = await identifyBody(w);
+    expect(body.traits).toEqual({ timezone: "America/Sao_Paulo", locale: "pt-BR" });
+  });
+
+  it("caller-supplied timezone / locale always win over the browser defaults", async () => {
+    stubDevice("Europe/Berlin", "de-DE");
+    const w = makeClient();
+    w.identify("u1", { traits: { timezone: "America/New_York", locale: "en-GB", plan: "pro" } });
+    const body = await identifyBody(w);
+    expect(body.traits).toEqual({ timezone: "America/New_York", locale: "en-GB", plan: "pro" });
+  });
+
+  it("a legacy time_zone / tz alias counts as caller-supplied (no competing timezone default)", async () => {
+    stubDevice("Europe/Berlin", "de-DE");
+    const w = makeClient();
+    w.identify("u1", { traits: { tz: "Asia/Tokyo" } });
+    const body = await identifyBody(w);
+    expect(body.traits).toEqual({ tz: "Asia/Tokyo", locale: "de-DE" });
+  });
+
+  it("sends no traits at all when the browser provides nothing and the caller passes none", async () => {
+    stubDevice(undefined, "");
+    const w = makeClient();
+    w.identify("u1");
+    const body = await identifyBody(w);
+    expect(body).toEqual({ external_user_id: "u1" });
+  });
+
+  it("omits only the key the browser cannot provide", async () => {
+    stubDevice(undefined, "fr-CA");
+    const w = makeClient();
+    w.identify("u1", { traits: { plan: "pro" } });
+    const body = await identifyBody(w);
+    expect(body.traits).toEqual({ plan: "pro", locale: "fr-CA" });
+  });
+
+  it("leaves the per-event context locale untouched", async () => {
+    stubDevice("Europe/Berlin", "de-DE");
+    const w = makeClient();
+    w.identify("u1");
+    w.track("feature_used");
+    await w.flush();
+    const batch = captured.find((c) => c.path === "/v1/events/batch")!;
+    expect(batch.body.events[0].context.locale).toBe("de-DE");
+    expect(batch.body.events[0].context.timezone).toBeUndefined();
+  });
+});
