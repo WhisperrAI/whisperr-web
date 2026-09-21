@@ -22,17 +22,16 @@ export class Transport {
 
   async sendBatch(events: TrackOp[], opts: SendOptions = {}): Promise<SendResult> {
     const body = {
-      events: events
-        .filter((e) => e.externalUserId)
-        .map((e) => ({
-          external_user_id: e.externalUserId,
-          event_type: e.eventType,
-          occurred_at: e.occurredAt,
-          properties: e.properties ?? {},
-          // $message_id is an idempotency key for backend dedup (nested in the
-          // free-form context so the strict ingestion accepts it).
-          context: { ...(e.context ?? {}), $message_id: e.messageId },
-        })),
+      events: events.map((e) => ({
+        // One id is required; an identified event needs only the user's.
+        ...(e.externalUserId ? { external_user_id: e.externalUserId } : { anonymous_id: e.anonymousId }),
+        event_type: e.eventType,
+        occurred_at: e.occurredAt,
+        properties: e.properties ?? {},
+        // $message_id is an idempotency key for backend dedup (nested in the
+        // free-form context so the strict ingestion accepts it).
+        context: { ...(e.context ?? {}), $message_id: e.messageId },
+      })),
     };
     if (body.events.length === 0) return "ok";
     return this.post("/v1/events/batch", body, opts);
@@ -42,6 +41,8 @@ export class Transport {
     const body: Record<string, unknown> = {
       external_user_id: op.externalUserId,
     };
+    // The server promotes this handle's anonymous user into external_user_id.
+    if (op.anonymousId) body.anonymous_id = op.anonymousId;
     if (op.traits && Object.keys(op.traits).length) body.traits = op.traits;
     if (op.preferredChannel) body.preferred_channel = op.preferredChannel;
     if (op.channels && op.channels.length) {

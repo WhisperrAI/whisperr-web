@@ -1,0 +1,76 @@
+{
+  "$schema": "../schemas/anonymous.schema.json",
+  "version": 1,
+  "description": "Canonical anonymous-visitor flows for SDKs that send pre-identify events under `anonymous_id` (SPEC.md → Anonymous visitors). Optional: an SDK that buffers pre-identify events locally instead does not run this file and stays conformant. Each case constructs a fresh client on empty storage and runs `steps` through the SDK's public API in order — `track` maps to track(eventType, properties), `identify` maps to identify() with the SDK-public scenario shape, `reset` maps to reset()/logout — flushing after every step, then asserts that ALL requests the case sent equal `expectedRequests`, in order: the same endpoint, and for /v1/events/batch the same events once each event's volatile `occurred_at` and `context` are removed (context must still carry `$message_id`, as wire.json pins), for /v1/identify the same body. `anonymous_id` values are placeholders (`$anon_a`, `$anon_b`, …), not literals: the SDK generates the handle, so the harness binds a placeholder to the first value it sees for it, requires every later use of that placeholder to carry the same value, requires different placeholders to carry different values, and requires every value to be 1–128 characters. Harnesses run with device trait defaults (timezone / locale) disabled, as for wire.json. This pins the contract: a track before any identify() is sent right away, carrying `anonymous_id` and no `external_user_id`; the identify() that follows carries the same `anonymous_id`, which is what makes the server promote the anonymous user into the identified one; reset() rotates the handle, so the next person on the same device is a new anonymous visitor whose events and identify carry a different `anonymous_id`.",
+  "cases": [
+    {
+      "name": "track_before_identify_carries_anonymous_id",
+      "steps": [
+        { "track": { "eventType": "pricing_viewed" } }
+      ],
+      "expectedRequests": [
+        {
+          "endpoint": "/v1/events/batch",
+          "events": [
+            { "anonymous_id": "$anon_a", "event_type": "pricing_viewed", "properties": {} }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "identify_carries_the_anonymous_id_it_promotes",
+      "steps": [
+        { "track": { "eventType": "pricing_viewed" } },
+        { "identify": { "externalUserId": "user_1", "traits": { "plan": "pro" } } }
+      ],
+      "expectedRequests": [
+        {
+          "endpoint": "/v1/events/batch",
+          "events": [
+            { "anonymous_id": "$anon_a", "event_type": "pricing_viewed", "properties": {} }
+          ]
+        },
+        {
+          "endpoint": "/v1/identify",
+          "body": {
+            "external_user_id": "user_1",
+            "anonymous_id": "$anon_a",
+            "traits": { "plan": "pro" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "reset_starts_a_new_anonymous_visitor",
+      "steps": [
+        { "track": { "eventType": "pricing_viewed" } },
+        { "identify": { "externalUserId": "user_1" } },
+        { "reset": true },
+        { "track": { "eventType": "pricing_viewed" } },
+        { "identify": { "externalUserId": "user_2" } }
+      ],
+      "expectedRequests": [
+        {
+          "endpoint": "/v1/events/batch",
+          "events": [
+            { "anonymous_id": "$anon_a", "event_type": "pricing_viewed", "properties": {} }
+          ]
+        },
+        {
+          "endpoint": "/v1/identify",
+          "body": { "external_user_id": "user_1", "anonymous_id": "$anon_a" }
+        },
+        {
+          "endpoint": "/v1/events/batch",
+          "events": [
+            { "anonymous_id": "$anon_b", "event_type": "pricing_viewed", "properties": {} }
+          ]
+        },
+        {
+          "endpoint": "/v1/identify",
+          "body": { "external_user_id": "user_2", "anonymous_id": "$anon_b" }
+        }
+      ]
+    }
+  ]
+}

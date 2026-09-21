@@ -12,7 +12,7 @@ The Whisperr web SDKs — a tiny, framework-agnostic core plus thin React/Next a
 
 - **One core, thin adapters.** All logic lives in `@whisperr/web`; the framework packages are ergonomic wrappers (no duplicated logic).
 - **Reliable by default.** Durable localStorage queue, `keepalive` flush on page hide (so churn-critical exit events aren't lost), batching, retry/backoff, 429/401 handling.
-- **Anonymous → identified.** Pre-login events buffer and attribute to the user on `identify()`.
+- **Anonymous → identified.** Pre-login events are sent under an anonymous id and merged into the user on `identify()`; `reset()` starts a new anonymous visitor.
 - **Respectful.** Cookieless, consent gate, DNT support, SSR-safe, tree-shakeable, zero deps.
 
 ## Develop

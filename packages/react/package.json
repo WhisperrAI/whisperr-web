@@ -1,6 +1,6 @@
 {
   "name": "@whisperr/react",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "description": "React bindings for the Whisperr web SDK \u2014 provider + hooks.",
   "license": "MIT",
   "type": "module",
@@ -29,7 +29,7 @@
     "react": ">=17"
   },
   "dependencies": {
-    "@whisperr/web": "^0.1.8"
+    "@whisperr/web": "^0.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",
