@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WhisperrClient } from "./client.js";
 
@@ -33,15 +34,21 @@ interface AnonymousCase {
   expectedRequests: ExpectedRequest[];
 }
 
+// The fixture as of whisperr-spec PR #6, carried here so this suite runs
+// against a spec checkout that predates it. The spec's copy wins once present.
+const VENDORED_SPEC = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "anonymous.json");
+
 async function loadSpec(): Promise<{ cases: AnonymousCase[] }> {
   // anonymous.json lives next to wire.json; derive it like behavior.test.ts does.
   const wire = process.env.WHISPERR_SPEC_PATH;
   const local =
     process.env.WHISPERR_ANONYMOUS_SPEC_PATH ?? (wire ? join(dirname(wire), "anonymous.json") : undefined);
-  if (local) return JSON.parse(readFileSync(local, "utf8"));
-  const res = await realFetch(SPEC_URL);
-  if (!res.ok) throw new Error(`fetch anonymous spec: ${res.status}`);
-  return res.json();
+  if (local && existsSync(local)) return JSON.parse(readFileSync(local, "utf8"));
+  if (!local) {
+    const res = await realFetch(SPEC_URL);
+    if (res.ok) return res.json();
+  }
+  return JSON.parse(readFileSync(VENDORED_SPEC, "utf8"));
 }
 
 afterEach(() => vi.unstubAllGlobals());
