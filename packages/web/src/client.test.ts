@@ -34,15 +34,17 @@ interface Captured {
   path: string;
   body: any;
   key: string;
+  keepalive?: boolean;
 }
 
 let captured: Captured[];
 let fetchMock: ReturnType<typeof vi.fn>;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function mockFetch(responder: (path: string) => { ok: boolean; status: number }) {
   fetchMock = vi.fn(async (url: string, init: any) => {
     const path = url.replace("https://api.whisperr.net", "");
-    captured.push({ path, body: JSON.parse(init.body), key: init.headers["X-API-Key"] });
+    captured.push({ path, body: JSON.parse(init.body), key: init.headers["X-API-Key"], keepalive: init.keepalive });
     return responder(path) as Response;
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -69,21 +71,53 @@ afterEach(() => {
 });
 
 describe("identity continuity", () => {
-  it("buffers pre-identify events, then backfills + sends them on identify()", async () => {
+  it("sends pre-identify events right away under an anonymous id, with no user id", async () => {
     const w = makeClient();
     w.track("offer_viewed", { id: 1 });
     await w.flush();
-    expect(captured).toHaveLength(0); // nothing sent before identify
+
+    const batch = captured.find((c) => c.path === "/v1/events/batch")!;
+    const ev = batch.body.events[0];
+    expect(ev.event_type).toBe("offer_viewed");
+    expect(ev.anonymous_id).toMatch(UUID_V4);
+    expect(ev).not.toHaveProperty("external_user_id");
+  });
+
+  it("identify() carries the same anonymous id so the server can promote it", async () => {
+    const w = makeClient();
+    w.track("offer_viewed");
+    await w.flush();
+    const anon = captured.find((c) => c.path === "/v1/events/batch")!.body.events[0].anonymous_id;
 
     w.identify("user_123", { email: "a@b.c" });
-    await vi.waitFor(() => expect(captured.length).toBeGreaterThanOrEqual(2));
+    await w.flush();
+    const identify = captured.find((c) => c.path === "/v1/identify")!;
+    expect(identify.body.external_user_id).toBe("user_123");
+    expect(identify.body.anonymous_id).toBe(anon);
+    expect(identify.body.channels[0]).toMatchObject({ channel: "email", address: "a@b.c" });
+  });
 
-    const batch = captured.find((c) => c.path === "/v1/events/batch");
-    expect(batch?.body.events[0].external_user_id).toBe("user_123");
-    expect(batch?.body.events[0].event_type).toBe("offer_viewed");
+  it("backfills the user id onto pre-identify events still queued when identify() runs", async () => {
+    const w = makeClient();
+    w.track("offer_viewed");
+    w.identify("user_123");
+    await w.flush();
 
-    const identify = captured.find((c) => c.path === "/v1/identify");
-    expect(identify?.body.channels[0]).toMatchObject({ channel: "email", address: "a@b.c" });
+    const batch = captured.find((c) => c.path === "/v1/events/batch")!;
+    expect(batch.body.events[0].external_user_id).toBe("user_123");
+    expect(batch.body.events[0]).not.toHaveProperty("anonymous_id");
+  });
+
+  it("keeps the anonymous id stable across page loads (new instance, same storage)", async () => {
+    const a = makeClient();
+    a.track("first");
+    await a.flush();
+    const b = makeClient();
+    b.track("second");
+    await b.flush();
+    const ids = captured.filter((c) => c.path === "/v1/events/batch").map((c) => c.body.events[0].anonymous_id);
+    expect(ids).toHaveLength(2);
+    expect(ids[1]).toBe(ids[0]);
   });
 });
 
@@ -186,14 +220,29 @@ describe("queue", () => {
 
   it("survives a restart (new instance) via persisted storage", async () => {
     const a = makeClient();
-    a.track("persisted"); // buffered (no identify) -> persisted to localStorage
+    await a.flush(); // settle the startup drain so the event below stays queued
+    a.track("persisted"); // queued, never flushed -> persisted to localStorage
     void a;
 
-    const b = makeClient(); // fresh instance, same localStorage
-    b.identify("u1");
+    const b = makeClient(); // fresh instance, same localStorage: its startup drain sends it
     await vi.waitFor(() => expect(captured.some((c) => c.path === "/v1/events/batch")).toBe(true));
     const batch = captured.find((c) => c.path === "/v1/events/batch")!;
     expect(batch.body.events.map((e: any) => e.event_type)).toContain("persisted");
+  });
+
+  it("sends events queued by a pre-0.2 SDK (no anonymousId) under the current anonymous id", async () => {
+    localStorage.setItem(
+      "whisperr.queue.v1",
+      JSON.stringify([
+        { kind: "track", eventType: "legacy", externalUserId: null, occurredAt: new Date().toISOString(), messageId: "m1" },
+      ]),
+    );
+    const w = makeClient();
+    await w.flush();
+    const ev = captured.find((c) => c.path === "/v1/events/batch")!.body.events[0];
+    expect(ev.event_type).toBe("legacy");
+    expect(ev.anonymous_id).toBe(localStorage.getItem("whisperr.anon_id"));
+    expect(ev).not.toHaveProperty("external_user_id");
   });
 
   it("two tabs sharing storage do not clobber each other (read-modify-write)", () => {
@@ -219,15 +268,46 @@ describe("consent + reset", () => {
     expect(captured).toHaveLength(0);
   });
 
-  it("reset clears the identified user", async () => {
+  it("reset() drops the user and starts a new anonymous visitor", async () => {
     const w = makeClient();
+    w.track("before_login");
+    await w.flush();
+    const first = captured.find((c) => c.path === "/v1/events/batch")!.body.events[0].anonymous_id;
     w.identify("u1");
     await w.flush();
     captured = [];
+
     w.reset();
-    w.track("after_reset"); // back to anonymous -> buffered, not sent
+    w.track("after_reset");
     await w.flush();
-    expect(captured.some((c) => c.path === "/v1/events/batch")).toBe(false);
+    const ev = captured.find((c) => c.path === "/v1/events/batch")!.body.events[0];
+    expect(ev).not.toHaveProperty("external_user_id");
+    expect(ev.anonymous_id).toMatch(UUID_V4);
+    expect(ev.anonymous_id).not.toBe(first);
+  });
+
+  it("events queued before reset() keep the identity they were tracked under", async () => {
+    const w = makeClient();
+    w.identify("u1");
+    w.track("before_logout");
+    w.reset();
+    w.track("after_logout");
+    await w.flush();
+    const events = captured.filter((c) => c.path === "/v1/events/batch").flatMap((c) => c.body.events);
+    expect(events.find((e: any) => e.event_type === "before_logout").external_user_id).toBe("u1");
+    expect(events.find((e: any) => e.event_type === "after_logout")).not.toHaveProperty("external_user_id");
+  });
+});
+
+describe("exit flush", () => {
+  it("sends pre-identify events on page hide with keepalive instead of holding them back", () => {
+    const w = makeClient();
+    w.track("exit_intent");
+    window.dispatchEvent(new Event("pagehide"));
+    const call = captured.find((c) => c.path === "/v1/events/batch");
+    expect(call).toBeTruthy();
+    expect(call!.keepalive).toBe(true);
+    expect(call!.body.events[0].anonymous_id).toMatch(UUID_V4);
   });
 });
 
@@ -259,7 +339,7 @@ describe("device traits (reserved identify keys: timezone / locale)", () => {
     w.identify("u1", { traits: { plan: "pro" } });
     const body = await identifyBody(w);
     expect(body.traits).toEqual({ plan: "pro", timezone: "Europe/Berlin", locale: "de-DE" });
-    expect(Object.keys(body)).toEqual(["external_user_id", "traits"]); // still inside traits, never top-level
+    expect(Object.keys(body)).toEqual(["external_user_id", "anonymous_id", "traits"]); // still inside traits, never top-level
   });
 
   it("populates the defaults even when identify() is called with no params", async () => {
@@ -291,7 +371,7 @@ describe("device traits (reserved identify keys: timezone / locale)", () => {
     const w = makeClient();
     w.identify("u1");
     const body = await identifyBody(w);
-    expect(body).toEqual({ external_user_id: "u1" });
+    expect(body).toEqual({ external_user_id: "u1", anonymous_id: expect.stringMatching(UUID_V4) });
   });
 
   it("omits only the key the browser cannot provide", async () => {

@@ -85,6 +85,8 @@ export interface WhisperrApi {
 export interface IdentifyOp {
   kind: "identify";
   externalUserId: string;
+  /** The anonymous handle this device used before identify(); the server promotes it into the user. */
+  anonymousId: string;
   traits?: Record<string, unknown>;
   preferredChannel?: string;
   channels?: WhisperrChannel[];
@@ -94,8 +96,10 @@ export interface IdentifyOp {
 export interface TrackOp {
   kind: "track";
   eventType: string;
-  /** null until the user is identified; filled in on identify(), then sent. */
+  /** null until the user is identified; a null-user event goes out under anonymousId. */
   externalUserId: string | null;
+  /** The device's anonymous handle; on the wire only when there is no user id. */
+  anonymousId: string;
   properties?: Record<string, unknown>;
   context?: Record<string, unknown>;
   occurredAt: string;

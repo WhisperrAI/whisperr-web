@@ -9,7 +9,8 @@ const QUEUE_KEY = "whisperr.queue.v1";
  * tabs sharing localStorage can't clobber each other's events (the classic
  * last-writer-wins bug). New events are appended; only the draining tab (holding
  * the cross-tab flush lock) removes from the front. Pre-identify track ops sit
- * here with a null user id until identify() backfills them.
+ * here with a null user id and go out under the anonymous id; identify()
+ * backfills the user id onto any still queued.
  */
 export class DurableQueue {
   constructor(

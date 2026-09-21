@@ -85,12 +85,14 @@ export class WhisperrClient implements WhisperrApi {
     this.enqueue({
       kind: "identify",
       externalUserId,
+      anonymousId: this.anonId,
       traits: withDeviceTraits(params.traits),
       preferredChannel: params.preferredChannel,
       channels: buildChannels(params),
       occurredAt: nowISO(),
     });
-    // Anonymous → identified: attribute buffered pre-login events to this user.
+    // Pre-login events not yet sent go out under this user; the identify's
+    // anonymous_id promotes the ones already sent.
     this.queue.backfillIdentity(externalUserId);
     void this.flush();
   }
@@ -110,13 +112,14 @@ export class WhisperrClient implements WhisperrApi {
     this.enqueue({
       kind: "track",
       eventType: type,
-      externalUserId: this.userId, // null until identify(); backfilled later
+      externalUserId: this.userId, // null before identify(): sent under anonymousId
+      anonymousId: this.anonId,
       properties,
       context: { ...pageContext(this.store), ...context },
       occurredAt: nowISO(),
       messageId: uuid(),
     });
-    if (this.sendableCount() >= this.flushAt) void this.flush();
+    if (this.queue.size >= this.flushAt) void this.flush();
   }
 
   page(name?: string, properties?: Record<string, unknown>): void {
@@ -174,7 +177,6 @@ export class WhisperrClient implements WhisperrApi {
     while (this.queue.size > 0) {
       const ops = this.queue.all;
       const front = ops[0]!;
-      if (front.kind === "track" && front.externalUserId === null) break; // buffered pre-identify
 
       let result: SendResult;
       let count: number;
@@ -228,23 +230,12 @@ export class WhisperrClient implements WhisperrApi {
   private takeTrackBatch(ops: readonly QueuedOp[]): TrackOp[] {
     const batch: TrackOp[] = [];
     for (const op of ops) {
-      if (op.kind === "track" && op.externalUserId) {
-        batch.push(op);
-        if (batch.length >= this.maxBatchSize) break;
-      } else {
-        break;
-      }
+      if (op.kind !== "track") break;
+      // Ops persisted by a pre-0.2 SDK have no anonymousId; they are this visitor's.
+      batch.push(op.anonymousId ? op : { ...op, anonymousId: this.anonId });
+      if (batch.length >= this.maxBatchSize) break;
     }
     return batch;
-  }
-
-  private sendableCount(): number {
-    let n = 0;
-    for (const op of this.queue.all) {
-      if (op.kind === "track" && op.externalUserId === null) break;
-      n++;
-    }
-    return n;
   }
 
   private isOptedOut(): boolean {
@@ -272,7 +263,6 @@ export class WhisperrClient implements WhisperrApi {
     const ops = this.queue.all;
     if (ops.length === 0) return;
     const front = ops[0]!;
-    if (front.kind === "track" && front.externalUserId === null) return; // buffered
 
     // Optimistically dequeue so a next page load doesn't resend; the keepalive
     // request survives unload, and each event's $message_id lets the backend

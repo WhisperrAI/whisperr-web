@@ -2,7 +2,7 @@
 
 export const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
 
-const LIB_VERSION = "0.1.8";
+const LIB_VERSION = "0.2.0";
 
 export function doNotTrackEnabled(): boolean {
   if (!isBrowser) return false;
@@ -96,7 +96,7 @@ const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 export function getOrCreateAnonId(store: KVStore): string {
   let id = store.get(ANON_KEY);
   if (!id) {
-    id = `anon_${uuid()}`;
+    id = uuid(); // sent as anonymous_id — the spec pins a UUID v4
     store.set(ANON_KEY, id);
   }
   return id;
