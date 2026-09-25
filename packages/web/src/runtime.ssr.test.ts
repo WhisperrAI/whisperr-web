@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
-import { Whisperr } from "./index.js";
+import { describe, expect, it, vi } from "vitest";
+import { Whisperr, WhisperrClient } from "./index.js";
 import { deviceTraits } from "./runtime.js";
 
 // @whisperr/next renders <WhisperrProvider> inside server components; the core
@@ -16,5 +16,19 @@ describe("SSR (no window / navigator)", () => {
     expect(w.ready).toBe(false);
     expect(() => w.identify("u1", { traits: { plan: "pro" } })).not.toThrow();
     expect(() => w.identify("u1")).not.toThrow();
+  });
+
+  it("a client constructed on the server installs no lifecycle hooks and never sends", async () => {
+    // Importing the module above touched no window/document; neither may a client.
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      const w = new WhisperrClient({ apiKey: "wrk_test" });
+      w.track("feature_used");
+      await w.flush();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

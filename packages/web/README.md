@@ -26,7 +26,7 @@ whisperr.reset();
 - **Anonymous → identified** — before login, behavior is recorded under an anonymous id; `identify()` merges it into the user, and `reset()` starts a new anonymous visitor.
 - **Timezone + locale by default** — `identify()` fills `traits.timezone` (IANA, from `Intl`) and `traits.locale` (BCP 47, from `navigator.language`) so quiet hours and message language match the user; your own `traits` values always win, and nothing is sent for a value the browser can't provide.
 - **Cookieless** (localStorage), consent-friendly (`optIn()` / `optOut()`), SSR-safe.
-- Auto-captures SPA pageviews; batches to `/v1/events/batch` with retry/backoff.
+- Auto-captures SPA pageviews; batches to `/v1/events/batch` with retry/backoff (honors `Retry-After`).
 
 Using React or Next? See `@whisperr/react` and `@whisperr/next`.
 

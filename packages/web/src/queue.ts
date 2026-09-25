@@ -4,6 +4,17 @@ import type { QueuedOp } from "./types.js";
 const QUEUE_KEY = "whisperr.queue.v1";
 
 /**
+ * Stable identity of a queued op. Track ops carry their $message_id; an
+ * identify is unique enough by user + timestamp. Used to settle deliveries by
+ * identity rather than position — see DurableQueue.remove().
+ */
+export function opKey(op: QueuedOp): string {
+  return op.kind === "track"
+    ? `t:${op.messageId ?? `${op.occurredAt}:${op.eventType}`}`
+    : `i:${op.externalUserId}:${op.occurredAt}`;
+}
+
+/**
  * A durable, ordered outbound queue. The backing store is the single source of
  * truth — every operation is a read-modify-write against it, so two browser
  * tabs sharing localStorage can't clobber each other's events (the classic
@@ -35,12 +46,17 @@ export class DurableQueue {
     this.write(ops);
   }
 
-  /** Remove the first `n` ops (the ones we just delivered). */
-  removeFront(n: number): void {
-    if (n <= 0) return;
+  /**
+   * Remove delivered ops wherever they now sit. Positions aren't stable while a
+   * request is in flight — an exit flush, another tab, or an overflow drop can
+   * shift the queue — so removing "the first n" could drop unsent events.
+   */
+  remove(delivered: readonly QueuedOp[]): void {
+    if (delivered.length === 0) return;
+    const keys = new Set(delivered.map(opKey));
     const ops = this.read();
-    ops.splice(0, n);
-    this.write(ops);
+    const kept = ops.filter((op) => !keys.has(opKey(op)));
+    if (kept.length !== ops.length) this.write(kept);
   }
 
   /** Assign a now-known user id to every still-anonymous track op. */
