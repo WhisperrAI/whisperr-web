@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1
 
 - The page-hide flush now sends the whole queue that fits the browser's 64 KiB
   keepalive quota (identify and track ops, chunked by `maxBatchSize`) instead of
