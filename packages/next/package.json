@@ -1,6 +1,6 @@
 {
   "name": "@whisperr/next",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Next.js bindings for the Whisperr web SDK \u2014 a client-boundary provider for the App Router.",
   "license": "MIT",
   "type": "module",
@@ -29,8 +29,8 @@
     "react": ">=17"
   },
   "dependencies": {
-    "@whisperr/react": "^0.2.0",
-    "@whisperr/web": "^0.2.0"
+    "@whisperr/react": "^0.2.1",
+    "@whisperr/web": "^0.2.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",
