@@ -1,5 +1,5 @@
-import { DurableQueue } from "./queue.js";
-import { Transport, type SendResult } from "./transport.js";
+import { DurableQueue, opKey } from "./queue.js";
+import { Transport, identifyBody, wireEvent, type SendOutcome } from "./transport.js";
 import {
   clearIdentity,
   deviceTraits,
@@ -27,6 +27,17 @@ import type {
 const OPTOUT_KEY = "whisperr.optout";
 const DEFAULT_BASE = "https://api.whisperr.net";
 const SNAKE_CASE = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
+
+// Keepalive request bodies share a 64 KiB in-flight quota per page (Fetch
+// spec); a request over it is rejected outright. Stay under it, leaving
+// headroom for the host app's own keepalive/beacon traffic.
+const KEEPALIVE_BUDGET = 60 * 1024;
+const BATCH_ENVELOPE_BYTES = '{"events":[]}'.length;
+
+// Page-wide exit-flush bookkeeping, shared by every client instance: the
+// keepalive quota is per page, and instances sharing the persisted queue (or
+// repeated hide events) must not put the same op in flight twice.
+const exitInflight = { bytes: 0, keys: new Set<string>() };
 
 export class WhisperrClient implements WhisperrApi {
   readonly ready: boolean;
@@ -178,26 +189,27 @@ export class WhisperrClient implements WhisperrApi {
       const ops = this.queue.all;
       const front = ops[0]!;
 
-      let result: SendResult;
-      let count: number;
+      let outcome: SendOutcome;
+      let sent: QueuedOp[];
       if (front.kind === "identify") {
-        result = await this.transport.sendIdentify(front);
-        count = 1;
+        outcome = await this.transport.sendIdentify(front);
+        sent = [front];
       } else {
         const batch = this.takeTrackBatch(ops);
-        result = await this.transport.sendBatch(batch);
-        count = batch.length;
+        outcome = await this.transport.sendBatch(batch);
+        sent = batch;
       }
 
+      const { result } = outcome;
       if (result === "ok") {
-        this.queue.removeFront(count);
+        this.queue.remove(sent);
         retries = 0;
         continue;
       }
       if (result === "drop") {
-        this.queue.removeFront(count);
+        this.queue.remove(sent);
         retries = 0;
-        this.emit({ type: "dropped", message: `dropped ${count} event(s) — rejected by server` });
+        this.emit({ type: "dropped", message: `dropped ${sent.length} event(s) — rejected by server` });
         continue;
       }
       if (result === "auth") {
@@ -209,7 +221,7 @@ export class WhisperrClient implements WhisperrApi {
         this.emit({ type: "retry_exhausted", message: "delivery failed after retries; will retry on next flush" });
         break;
       }
-      await delay(backoff(retries));
+      await delay(retryDelay(retries, outcome.retryAfterMs));
     }
   }
 
@@ -231,11 +243,15 @@ export class WhisperrClient implements WhisperrApi {
     const batch: TrackOp[] = [];
     for (const op of ops) {
       if (op.kind !== "track") break;
-      // Ops persisted by a pre-0.2 SDK have no anonymousId; they are this visitor's.
-      batch.push(op.anonymousId ? op : { ...op, anonymousId: this.anonId });
+      batch.push(this.withAnonymousId(op));
       if (batch.length >= this.maxBatchSize) break;
     }
     return batch;
+  }
+
+  /** Ops persisted by a pre-0.2 SDK have no anonymousId; they are this visitor's. */
+  private withAnonymousId(op: TrackOp): TrackOp {
+    return op.anonymousId ? op : { ...op, anonymousId: this.anonId };
   }
 
   private isOptedOut(): boolean {
@@ -256,25 +272,72 @@ export class WhisperrClient implements WhisperrApi {
     window.addEventListener("pagehide", onExit);
   }
 
-  /** Best-effort synchronous exit flush — keepalive keeps the request + auth
-   *  alive through unload. Optimistically dequeue so we don't double-send next load. */
+  /**
+   * Exit flush: the page is being hidden or unloaded, so the next timer tick
+   * may never come. Sends everything that fits the keepalive quota right now —
+   * keepalive requests outlive the page and, unlike sendBeacon, still carry the
+   * X-API-Key header. Whatever doesn't fit stays queued for the next load.
+   *
+   * Delivery is at-least-once: ops stay persisted until a response confirms
+   * them. If the page dies first, the next load resends them with the same
+   * $message_id and the backend dedups (unique per app + message id); removing
+   * them up front would instead lose them whenever the request fails.
+   */
   private flushOnExit(): void {
     if (this.muted) return;
-    const ops = this.queue.all;
-    if (ops.length === 0) return;
-    const front = ops[0]!;
+    let free = KEEPALIVE_BUDGET - exitInflight.bytes;
+    const batch: TrackOp[] = [];
+    const parts: string[] = [];
+    let batchBytes = BATCH_ENVELOPE_BYTES;
+    const sendBatch = () => {
+      if (!batch.length) return;
+      this.sendOnExit("/v1/events/batch", `{"events":[${parts.join(",")}]}`, batchBytes, batch.splice(0));
+      free -= batchBytes;
+      parts.length = 0;
+      batchBytes = BATCH_ENVELOPE_BYTES;
+    };
 
-    // Optimistically dequeue so a next page load doesn't resend; the keepalive
-    // request survives unload, and each event's $message_id lets the backend
-    // dedup the rare case where it both delivers here and is retried elsewhere.
-    if (front.kind === "identify") {
-      void this.transport.sendIdentify(front, { keepalive: true });
-      this.queue.removeFront(1);
-    } else {
-      const batch = this.takeTrackBatch(ops);
-      void this.transport.sendBatch(batch, { keepalive: true });
-      this.queue.removeFront(batch.length);
+    for (const op of this.queue.all) {
+      if (exitInflight.keys.has(opKey(op))) continue; // already on its way
+      if (op.kind === "identify") {
+        const body = JSON.stringify(identifyBody(op));
+        const bytes = utf8Length(body);
+        if (bytes <= free - (batch.length ? batchBytes : 0)) {
+          this.sendOnExit("/v1/identify", body, bytes, [op]);
+          free -= bytes;
+        }
+        continue;
+      }
+      if (batch.length >= this.maxBatchSize) sendBatch();
+      const part = JSON.stringify(wireEvent(this.withAnonymousId(op)));
+      const bytes = utf8Length(part) + (parts.length ? 1 : 0); // + separating comma
+      if (batchBytes + bytes > free) continue; // over the quota — left for the next load
+      batch.push(op);
+      parts.push(part);
+      batchBytes += bytes;
     }
+    sendBatch();
+  }
+
+  private sendOnExit(path: string, json: string, bytes: number, ops: QueuedOp[]): void {
+    const keys = ops.map(opKey);
+    for (const k of keys) exitInflight.keys.add(k);
+    exitInflight.bytes += bytes;
+    void this.transport
+      .sendRaw(path, json, { keepalive: true })
+      .then(({ result }) => {
+        // Still alive to see the response (tab hidden, or it beat the unload):
+        // settle it exactly like a normal drain would.
+        if (result === "ok" || result === "drop") this.queue.remove(ops);
+        if (result === "drop") {
+          this.emit({ type: "dropped", message: `dropped ${ops.length} event(s) — rejected by server` });
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        exitInflight.bytes -= bytes;
+        for (const k of keys) exitInflight.keys.delete(k);
+      });
   }
 
   private installPageviews(): void {
@@ -319,9 +382,25 @@ function buildChannels(params: IdentifyParams): WhisperrChannel[] | undefined {
   return out.length ? out : undefined;
 }
 
-function backoff(attempt: number): number {
-  const base = Math.min(30000, 1000 * 2 ** attempt);
+/** A server-sent Retry-After (already capped) wins over exponential backoff; both get jitter. */
+function retryDelay(attempt: number, retryAfterMs?: number): number {
+  const base = retryAfterMs ?? Math.min(30000, 1000 * 2 ** attempt);
   return base + Math.floor(Math.random() * 250);
+}
+
+/** UTF-8 byte length of a string — what the keepalive quota counts. */
+function utf8Length(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff) {
+      n += 4; // surrogate pair → one 4-byte code point
+      i++;
+    } else n += 3;
+  }
+  return n;
 }
 
 function delay(ms: number): Promise<void> {
