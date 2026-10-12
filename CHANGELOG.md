@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0
+## 0.3.0 — 2026-10-12
 
 All three packages (`@whisperr/web`, `@whisperr/react`, `@whisperr/next`)
 release together. Requires a backend on whisperr-spec contract v2 (it accepts

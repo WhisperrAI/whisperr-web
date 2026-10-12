@@ -165,32 +165,36 @@ function check(c: V2Case): void {
   const substitute = (expected: Record<string, unknown>, actual: Record<string, unknown> | undefined, where: string) =>
     Object.fromEntries(Object.entries(expected).map(([k, v]) => [k, resolve(v, actual?.[k], `${where}.${k}`)]));
 
-  expect(captured.map((r) => r.path), c.name).toEqual(c.expectedRequests.map((r) => r.endpoint));
-  c.expectedRequests.forEach((r, i) => {
-    const where = `${c.name}[${i}]`;
-    const actual = captured[i]!.body;
-    if ("body" in r) {
-      const body = { ...actual };
-      // An identified body may carry the anonymous handle when the case does not name it.
-      if (body.external_user_id && !("anonymous_id" in r.body)) delete body.anonymous_id;
-      expect(body, where).toEqual(substitute(r.body, body, where));
-      return;
+  // Per endpoint: identify bodies in order, and events in order; the order
+  // between an identify and an event is not compared (v2.json → Comparison).
+  for (const r of captured) expect(["/v1/identify", "/v1/events/batch"], c.name).toContain(r.path);
+  const bodies = captured.filter((r) => r.path === "/v1/identify").map((r) => r.body);
+  const expectedBodies = c.expectedRequests.flatMap((r) => ("body" in r ? [r.body] : []));
+  expect(bodies.length, `${c.name}: identify count`).toBe(expectedBodies.length);
+  expectedBodies.forEach((expected, i) => {
+    const where = `${c.name} identify[${i}]`;
+    const body = { ...bodies[i] };
+    // An identified body may carry the anonymous handle when the case does not name it.
+    if (body.external_user_id && !("anonymous_id" in expected)) delete body.anonymous_id;
+    expect(body, where).toEqual(substitute(expected, body, where));
+  });
+
+  const events = captured.filter((r) => r.path === "/v1/events/batch").flatMap((r) => r.body.events);
+  const expectedEvents = c.expectedRequests.flatMap((r) => ("events" in r ? r.events : []));
+  expect(events.length, `${c.name}: event count`).toBe(expectedEvents.length);
+  expectedEvents.forEach((expected, j) => {
+    const at = `${c.name} event[${j}]`;
+    const { occurred_at, context, ...rest } = events[j];
+    expect(occurred_at, `${at} occurred_at`).toBeTruthy();
+    expect(context?.$message_id, `${at} context.$message_id`).toBeTruthy();
+    const { context: expectedContext, ...expectedRest } = expected as { context?: Record<string, unknown> };
+    expect(rest, at).toEqual(substitute(expectedRest, rest, at));
+    if (!expectedContext) return;
+    const want = substitute(expectedContext, context, `${at}.context`);
+    for (const key of GOVERNED_CONTEXT_KEYS) {
+      if (key in want) expect(context[key], `${at}.context.${key}`).toEqual(want[key]);
+      else expect(context, `${at}.context`).not.toHaveProperty(key);
     }
-    expect(actual.events.length, where).toBe(r.events.length);
-    r.events.forEach((expected, j) => {
-      const at = `${where}.events[${j}]`;
-      const { occurred_at, context, ...rest } = actual.events[j];
-      expect(occurred_at, `${at} occurred_at`).toBeTruthy();
-      expect(context?.$message_id, `${at} context.$message_id`).toBeTruthy();
-      const { context: expectedContext, ...expectedRest } = expected as { context?: Record<string, unknown> };
-      expect(rest, at).toEqual(substitute(expectedRest, rest, at));
-      if (!expectedContext) return;
-      const want = substitute(expectedContext, context, `${at}.context`);
-      for (const key of GOVERNED_CONTEXT_KEYS) {
-        if (key in want) expect(context[key], `${at}.context.${key}`).toEqual(want[key]);
-        else expect(context, `${at}.context`).not.toHaveProperty(key);
-      }
-    });
   });
 }
 
