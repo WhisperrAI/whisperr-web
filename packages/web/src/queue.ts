@@ -4,14 +4,14 @@ import type { QueuedOp } from "./types.js";
 const QUEUE_KEY = "whisperr.queue.v1";
 
 /**
- * Stable identity of a queued op. Track ops carry their $message_id; an
- * identify is unique enough by user + timestamp. Used to settle deliveries by
+ * Stable identity of a queued op. Track ops carry their $message_id and
+ * identify ops a local id; an identify queued by SDK <= 0.2 falls back to user +
+ * timestamp. Used to settle deliveries by
  * identity rather than position — see DurableQueue.remove().
  */
 export function opKey(op: QueuedOp): string {
-  return op.kind === "track"
-    ? `t:${op.messageId ?? `${op.occurredAt}:${op.eventType}`}`
-    : `i:${op.externalUserId}:${op.occurredAt}`;
+  if (op.kind === "track") return `t:${op.messageId ?? `${op.occurredAt}:${op.eventType}`}`;
+  return op.messageId ? `i:${op.messageId}` : `i:${op.externalUserId}:${op.occurredAt}`;
 }
 
 /**

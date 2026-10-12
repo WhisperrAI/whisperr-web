@@ -2,7 +2,8 @@
 
 export const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
 
-const LIB_VERSION = "0.2.1";
+export const SDK_NAME = "whisperr-web";
+export const SDK_VERSION = "0.3.0";
 
 export function doNotTrackEnabled(): boolean {
   if (!isBrowser) return false;
@@ -133,10 +134,14 @@ export function currentSessionId(store: KVStore): string {
   return id;
 }
 
-/** Lightweight, non-PII page + library context attached to every event. */
+/**
+ * Lightweight, non-PII page + library context attached to every event. It
+ * never carries `locale`: the server reads `context.locale` as the message
+ * language of that one event, so only the caller may set it.
+ */
 export function pageContext(store: KVStore): Record<string, unknown> {
   const ctx: Record<string, unknown> = {
-    library: { name: "whisperr-web", version: LIB_VERSION },
+    library: { name: SDK_NAME, version: SDK_VERSION },
     session_id: currentSessionId(store),
   };
   if (isBrowser) {
@@ -146,10 +151,108 @@ export function pageContext(store: KVStore): Record<string, unknown> {
       referrer: document.referrer || undefined,
       title: document.title || undefined,
     };
-    ctx.locale = navigator.language;
     ctx.user_agent = navigator.userAgent;
   }
   return ctx;
+}
+
+/**
+ * The version keys every client event carries in `context` (whisperr-spec →
+ * versions on every event): platform, SDK name + version, and the app's
+ * version / build when the app configured them. No value, no key.
+ */
+export function environmentContext(app: { appVersion?: string; appBuild?: string }): Record<string, string> {
+  const ctx: Record<string, string> = { platform: "web", sdk_name: SDK_NAME, sdk_version: SDK_VERSION };
+  const version = nonEmpty(app.appVersion);
+  if (version) ctx.app_version = version;
+  const build = nonEmpty(app.appBuild);
+  if (build) ctx.app_build = build;
+  return ctx;
+}
+
+function nonEmpty(v: unknown): string | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t ? t : undefined;
+}
+
+// ---- app language (reserved trait `app_language`) ----
+
+const APP_LANGUAGE_KEY = "whisperr.app_language";
+// BCP 47 shape: a 2–3 letter (or 4–8 letter registered) primary subtag, then
+// 1–8 character alphanumeric subtags. Well-formedness only; no registry lookup.
+const BCP47 = /^[a-z]{2,8}(?:-[a-z0-9]{1,8})*$/i;
+
+/** BCP 47 tag with "_" changed to "-", or undefined when the value is not a well-formed tag. */
+export function normalizeLanguageTag(tag: unknown): string | undefined {
+  if (typeof tag !== "string") return undefined;
+  const t = tag.trim().replace(/_/g, "-");
+  return t.length <= 35 && BCP47.test(t) ? t : undefined;
+}
+
+export function getAppLanguage(store: KVStore): string | undefined {
+  return normalizeLanguageTag(store.get(APP_LANGUAGE_KEY));
+}
+export function storeAppLanguage(store: KVStore, tag: string | null): void {
+  if (tag === null) store.remove(APP_LANGUAGE_KEY);
+  else store.set(APP_LANGUAGE_KEY, tag);
+}
+
+// ---- identify receipt (24h restore-identify throttle) ----
+
+const RECEIPT_KEY = "whisperr.identify_receipt";
+
+/** The traits a restore identify carries: device defaults and the app language. */
+export const RESTORE_TRAIT_KEYS = ["timezone", "locale", "app_language"] as const;
+
+/** What the server last confirmed for a user: its restore traits, and when. */
+export interface IdentifyReceipt {
+  user: string;
+  traits: Record<string, unknown>;
+  at: number;
+}
+
+export function getIdentifyReceipt(store: KVStore): IdentifyReceipt | null {
+  const raw = store.get(RECEIPT_KEY);
+  if (!raw) return null;
+  try {
+    const r = JSON.parse(raw) as IdentifyReceipt;
+    const ok = typeof r?.user === "string" && typeof r.at === "number" && !!r.traits && typeof r.traits === "object";
+    return ok ? r : null;
+  } catch {
+    return null;
+  }
+}
+export function setIdentifyReceipt(store: KVStore, receipt: IdentifyReceipt): void {
+  store.set(RECEIPT_KEY, JSON.stringify(receipt));
+}
+export function clearIdentifyReceipt(store: KVStore): void {
+  store.remove(RECEIPT_KEY);
+}
+
+/** The restore-trait subset of an identify's traits. */
+export function restoreTraitsOf(traits: Record<string, unknown> | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of RESTORE_TRAIT_KEYS) if (traits && traits[k] !== undefined) out[k] = traits[k];
+  return out;
+}
+
+/** Order-independent equality of two trait objects. */
+export function sameTraits(a: Record<string, unknown> | undefined, b: Record<string, unknown> | undefined): boolean {
+  return canonicalJSON(a ?? {}) === canonicalJSON(b ?? {});
+}
+
+function canonicalJSON(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalJSON).join(",")}]`;
+  if (v && typeof v === "object") {
+    const entries = Object.keys(v as Record<string, unknown>)
+      .sort()
+      .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+      .map((k) => `${JSON.stringify(k)}:${canonicalJSON((v as Record<string, unknown>)[k])}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(v) ?? "null";
 }
 
 // ---- device traits (reserved identify trait keys) ----

@@ -25,4 +25,5 @@ jobs:
       - run: npm test -w @whisperr/web
         env:
           WHISPERR_SPEC_PATH: ${{ github.workspace }}/whisperr-spec/conformance/wire.json
+          WHISPERR_REQUIRE_V2: "1"
       - run: npm run size -w @whisperr/web

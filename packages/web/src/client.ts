@@ -2,15 +2,24 @@ import { DurableQueue, opKey } from "./queue.js";
 import { Transport, identifyBody, wireEvent, type SendOutcome } from "./transport.js";
 import {
   clearIdentity,
+  clearIdentifyReceipt,
   deviceTraits,
   doNotTrackEnabled,
+  environmentContext,
+  getAppLanguage,
+  getIdentifyReceipt,
   getOrCreateAnonId,
   getUserId,
   isBrowser,
   makeStore,
+  normalizeLanguageTag,
   nowISO,
   pageContext,
+  restoreTraitsOf,
+  sameTraits,
+  setIdentifyReceipt,
   setUserId,
+  storeAppLanguage,
   uuid,
   type KVStore,
 } from "./runtime.js";
@@ -27,6 +36,13 @@ import type {
 const OPTOUT_KEY = "whisperr.optout";
 const DEFAULT_BASE = "https://api.whisperr.net";
 const SNAKE_CASE = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
+
+// Restore identify (whisperr-spec → identify at every app start): wait this
+// long after init so an app that identifies the same user on load goes first
+// and the SDK sends nothing extra. A page hide before then queues it at once.
+const RESTORE_IDENTIFY_DELAY_MS = 2000;
+// Skip the restore identify when the same identify was delivered this recently.
+const RESTORE_IDENTIFY_THROTTLE_MS = 24 * 60 * 60 * 1000;
 
 // Keepalive request bodies share a 64 KiB in-flight quota per page (Fetch
 // spec); a request over it is rejected outright. Stay under it, leaving
@@ -51,12 +67,14 @@ export class WhisperrClient implements WhisperrApi {
   private readonly maxRetries: number;
   private readonly debug: boolean;
   private readonly onError?: (error: WhisperrError) => void;
+  private readonly envContext: Record<string, string>;
 
   private userId: string | null = null;
   private anonId = "";
   private muted: boolean; // opted out / disabled / DNT — capture is a no-op
   private drainChain: Promise<void> = Promise.resolve();
   private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private restoreTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: WhisperrOptions) {
     const baseUrl = (options.baseUrl ?? DEFAULT_BASE).replace(/\/+$/, "");
@@ -65,6 +83,7 @@ export class WhisperrClient implements WhisperrApi {
     this.maxRetries = options.maxRetries ?? 6;
     this.debug = options.debug ?? false;
     this.onError = options.onError;
+    this.envContext = environmentContext(options);
 
     this.store = makeStore(options.persistence ?? "localStorage");
     this.queue = new DurableQueue(this.store, options.maxQueueSize ?? 1000);
@@ -82,6 +101,7 @@ export class WhisperrClient implements WhisperrApi {
     if (!this.muted) {
       this.startTimers(options.flushIntervalMs ?? 10000);
       this.installLifecycle();
+      if (this.userId) this.scheduleRestoreIdentify();
       if (options.autocapturePageviews ?? true) this.installPageviews();
       // Drain anything left from a previous page load.
       void this.flush();
@@ -90,6 +110,9 @@ export class WhisperrClient implements WhisperrApi {
 
   identify(externalUserId: string, params: IdentifyParams = {}): void {
     if (this.muted || !externalUserId) return;
+    // The app identified first: its identify replaces the restore identify
+    // (for another user, the restored one is no longer current).
+    this.cancelRestoreIdentify();
     this.userId = externalUserId;
     setUserId(this.store, externalUserId);
 
@@ -97,10 +120,12 @@ export class WhisperrClient implements WhisperrApi {
       kind: "identify",
       externalUserId,
       anonymousId: this.anonId,
-      traits: withDeviceTraits(params.traits),
+      // The stored app language rides along; a caller-supplied value wins.
+      traits: withDeviceTraits({ ...this.languageTraits(), ...params.traits }),
       preferredChannel: params.preferredChannel,
       channels: buildChannels(params),
       occurredAt: nowISO(),
+      messageId: uuid(),
     });
     // Pre-login events not yet sent go out under this user; the identify's
     // anonymous_id promotes the ones already sent.
@@ -126,7 +151,7 @@ export class WhisperrClient implements WhisperrApi {
       externalUserId: this.userId, // null before identify(): sent under anonymousId
       anonymousId: this.anonId,
       properties,
-      context: { ...pageContext(this.store), ...context },
+      context: { ...pageContext(this.store), ...this.envContext, ...context },
       occurredAt: nowISO(),
       messageId: uuid(),
     });
@@ -138,8 +163,38 @@ export class WhisperrClient implements WhisperrApi {
     this.track("page_viewed", { name, ...properties });
   }
 
+  setAppLanguage(tag: string | null): void {
+    if (tag === null) {
+      storeAppLanguage(this.store, null); // the server keeps the last value it got
+      return;
+    }
+    const lang = normalizeLanguageTag(tag);
+    if (!lang) {
+      this.log(`setAppLanguage: "${String(tag)}" is not a BCP 47 language tag — ignored`);
+      return;
+    }
+    // Unchanged: every identify already carries it, so an app that sets the
+    // language on each page load sends nothing extra.
+    if (lang === getAppLanguage(this.store)) return;
+    storeAppLanguage(this.store, lang);
+    if (this.muted) return;
+    // A partial identify for the user, or an anonymous identify for the handle.
+    this.enqueue({
+      kind: "identify",
+      externalUserId: this.userId,
+      ...(this.userId ? {} : { anonymousId: this.anonId }),
+      traits: { app_language: lang },
+      occurredAt: nowISO(),
+      messageId: uuid(),
+      partial: true,
+    });
+    void this.flush();
+  }
+
   reset(): void {
+    this.cancelRestoreIdentify();
     clearIdentity(this.store);
+    clearIdentifyReceipt(this.store);
     this.userId = null;
     this.anonId = getOrCreateAnonId(this.store); // fresh anonymous identity
   }
@@ -152,6 +207,7 @@ export class WhisperrClient implements WhisperrApi {
   optOut(): void {
     this.store.set(OPTOUT_KEY, "1");
     this.muted = true;
+    this.cancelRestoreIdentify();
     this.queue.clear();
   }
 
@@ -203,6 +259,7 @@ export class WhisperrClient implements WhisperrApi {
       const { result } = outcome;
       if (result === "ok") {
         this.queue.remove(sent);
+        this.recordIdentifyReceipts(sent);
         retries = 0;
         continue;
       }
@@ -225,6 +282,13 @@ export class WhisperrClient implements WhisperrApi {
     }
   }
 
+  private log(msg: string): void {
+    if (this.debug && typeof console !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.warn(`[whisperr] ${msg}`);
+    }
+  }
+
   private emit(error: WhisperrError): void {
     try {
       this.onError?.(error);
@@ -237,6 +301,80 @@ export class WhisperrClient implements WhisperrApi {
 
   private enqueue(op: QueuedOp): void {
     this.queue.enqueue(op);
+  }
+
+  private languageTraits(): Record<string, unknown> | undefined {
+    const lang = getAppLanguage(this.store);
+    return lang ? { app_language: lang } : undefined;
+  }
+
+  // ---- restore identify (identify at every app start) ----
+
+  private scheduleRestoreIdentify(): void {
+    this.restoreTimer = setTimeout(() => {
+      this.restoreTimer = null;
+      if (this.queueRestoreIdentify()) void this.flush();
+    }, RESTORE_IDENTIFY_DELAY_MS);
+  }
+
+  private cancelRestoreIdentify(): void {
+    if (this.restoreTimer === null) return;
+    clearTimeout(this.restoreTimer);
+    this.restoreTimer = null;
+  }
+
+  /**
+   * Queues one identify for the stored user, so a user the server lost (or
+   * never saw identified) is re-identified on every start. It carries the
+   * device traits and the stored app language, never channels. Returns false
+   * when it is skipped.
+   */
+  private queueRestoreIdentify(): boolean {
+    const user = this.userId;
+    if (this.muted || !user) return false;
+    const traits = withDeviceTraits(this.languageTraits());
+    // The server confirmed this user with these restore traits less than 24h ago.
+    const receipt = getIdentifyReceipt(this.store);
+    const age = receipt ? Date.now() - receipt.at : Infinity;
+    if (receipt?.user === user && sameTraits(receipt.traits, traits) && age >= 0 && age < RESTORE_IDENTIFY_THROTTLE_MS) {
+      return false;
+    }
+    // Another tab of this page load already queued the same one.
+    const queued = this.queue.all.some(
+      (op) => op.kind === "identify" && op.restore && op.externalUserId === user && sameTraits(op.traits, traits),
+    );
+    if (queued) return false;
+    this.enqueue({
+      kind: "identify",
+      externalUserId: user,
+      anonymousId: this.anonId,
+      traits,
+      occurredAt: nowISO(),
+      messageId: uuid(),
+      restore: true,
+    });
+    return true;
+  }
+
+  /**
+   * After a 2xx, remember which restore traits the server has for the user, so
+   * the next start can skip a duplicate restore identify. A partial identify
+   * updates the traits of the same user's receipt but not its time: the
+   * restore identify still goes out once a day.
+   */
+  private recordIdentifyReceipts(ops: readonly QueuedOp[]): void {
+    for (const op of ops) {
+      if (op.kind !== "identify" || !op.externalUserId) continue;
+      const traits = restoreTraitsOf(op.traits);
+      if (!op.partial) {
+        setIdentifyReceipt(this.store, { user: op.externalUserId, traits, at: Date.now() });
+        continue;
+      }
+      const receipt = getIdentifyReceipt(this.store);
+      if (receipt?.user === op.externalUserId) {
+        setIdentifyReceipt(this.store, { ...receipt, traits: { ...receipt.traits, ...traits } });
+      }
+    }
   }
 
   private takeTrackBatch(ops: readonly QueuedOp[]): TrackOp[] {
@@ -285,6 +423,11 @@ export class WhisperrClient implements WhisperrApi {
    */
   private flushOnExit(): void {
     if (this.muted) return;
+    // The next page may never come: queue a pending restore identify now.
+    if (this.restoreTimer !== null) {
+      this.cancelRestoreIdentify();
+      this.queueRestoreIdentify();
+    }
     let free = KEEPALIVE_BUDGET - exitInflight.bytes;
     const batch: TrackOp[] = [];
     const parts: string[] = [];
@@ -329,6 +472,7 @@ export class WhisperrClient implements WhisperrApi {
         // Still alive to see the response (tab hidden, or it beat the unload):
         // settle it exactly like a normal drain would.
         if (result === "ok" || result === "drop") this.queue.remove(ops);
+        if (result === "ok") this.recordIdentifyReceipts(ops);
         if (result === "drop") {
           this.emit({ type: "dropped", message: `dropped ${ops.length} event(s) — rejected by server` });
         }

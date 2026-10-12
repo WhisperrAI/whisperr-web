@@ -52,10 +52,10 @@ export function wireEvent(e: TrackOp): Record<string, unknown> {
 
 /** The /v1/identify body for a queued identify op. */
 export function identifyBody(op: IdentifyOp): Record<string, unknown> {
-  const body: Record<string, unknown> = {
-    external_user_id: op.externalUserId,
-  };
-  // The server promotes this handle's anonymous user into external_user_id.
+  const body: Record<string, unknown> = {};
+  // No user id: an anonymous identify, which updates the handle's anonymous user.
+  if (op.externalUserId) body.external_user_id = op.externalUserId;
+  // With a user id, the server promotes this handle's anonymous user into it.
   if (op.anonymousId) body.anonymous_id = op.anonymousId;
   if (op.traits && Object.keys(op.traits).length) body.traits = op.traits;
   if (op.preferredChannel) body.preferred_channel = op.preferredChannel;
