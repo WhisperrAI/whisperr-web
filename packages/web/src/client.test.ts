@@ -382,14 +382,16 @@ describe("device traits (reserved identify keys: timezone / locale)", () => {
     expect(body.traits).toEqual({ plan: "pro", locale: "fr-CA" });
   });
 
-  it("leaves the per-event context locale untouched", async () => {
+  it("never puts the browser locale in event context (context.locale is the caller's per-event language)", async () => {
     stubDevice("Europe/Berlin", "de-DE");
     const w = makeClient();
     w.identify("u1");
     w.track("feature_used");
+    w.track("offer_viewed", {}, { locale: "fr" });
     await w.flush();
-    const batch = captured.find((c) => c.path === "/v1/events/batch")!;
-    expect(batch.body.events[0].context.locale).toBe("de-DE");
-    expect(batch.body.events[0].context.timezone).toBeUndefined();
+    const events = captured.find((c) => c.path === "/v1/events/batch")!.body.events;
+    expect(events[0].context).not.toHaveProperty("locale");
+    expect(events[0].context.timezone).toBeUndefined();
+    expect(events[1].context.locale).toBe("fr");
   });
 });

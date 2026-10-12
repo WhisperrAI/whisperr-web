@@ -11,6 +11,7 @@ import { WhisperrClient } from "./client.js";
 vi.mock("./runtime.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./runtime.js")>()),
   deviceTraits: () => ({}),
+  environmentContext: () => ({}),
 }));
 
 const SPEC_URL =

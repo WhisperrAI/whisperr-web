@@ -28,3 +28,11 @@ function Checkout() {
 ```
 
 Initialization is idempotent (safe under StrictMode) and SSR-safe.
+
+`useWhisperr()` returns the full `@whisperr/web` client, including
+`setAppLanguage(tag)`:
+
+```tsx
+const whisperr = useWhisperr();
+useEffect(() => whisperr.setAppLanguage(i18n.language), [i18n.language]);
+```

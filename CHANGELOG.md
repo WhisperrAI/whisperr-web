@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.3.0
+
+All three packages (`@whisperr/web`, `@whisperr/react`, `@whisperr/next`)
+release together. Requires a backend on whisperr-spec contract v2 (it accepts
+an identify with `anonymous_id` and no `external_user_id`).
+
+- Identify on every load: when a user id is stored from an earlier visit, the
+  SDK queues one identify for that user (user id, anonymous id, device traits,
+  stored app language; no channels) about 2 seconds after load, through the
+  ordered queue. It is skipped when the app calls `identify()` first, and when
+  the same identify was delivered less than 24 hours ago. A page hide before
+  the 2 seconds queues it at once for the exit flush.
+- New `setAppLanguage(tag | null)`: stores the language the user picked in the
+  product (BCP 47, `_` becomes `-`, invalid values are ignored with a debug
+  log) and sends it as `traits.app_language`: a partial identify for the
+  current user, or an anonymous identify before login. Every identify carries
+  the stored value; a caller-supplied `traits.app_language` wins. `null`
+  clears the stored value. An unchanged value sends nothing. Available through
+  `useWhisperr()` in `@whisperr/react` and `@whisperr/next`, and in the
+  script-tag stub.
+- Every event's `context` now carries `platform: "web"`, `sdk_name`,
+  `sdk_version`, and `app_version` / `app_build` from the new `appVersion` /
+  `appBuild` init options (no value, no key).
+- Breaking: the SDK no longer puts the browser locale in `context.locale`. The
+  server reads `context.locale` as the message language of that one event, so
+  only the caller sets it. The browser locale still goes in `traits.locale`.
+
 ## 0.2.1
 
 - The page-hide flush now sends the whole queue that fits the browser's 64 KiB

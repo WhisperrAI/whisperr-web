@@ -59,6 +59,13 @@ export interface WhisperrOptions {
   maxRetries?: number;
   /** Called when delivery fails (auth/drop/retries exhausted). For observability. */
   onError?: (error: WhisperrError) => void;
+  /**
+   * Your app's release version (for example "2.4.0"). Sent as
+   * `context.app_version` on every event. Omitted when not set.
+   */
+  appVersion?: string;
+  /** Your app's build number or id (for example "512"). Sent as `context.app_build`. Omitted when not set. */
+  appBuild?: string;
 }
 
 export interface WhisperrError {
@@ -72,6 +79,13 @@ export interface WhisperrApi {
   identify(externalUserId: string, params?: IdentifyParams): void;
   track(eventType: string, properties?: Record<string, unknown>, context?: Record<string, unknown>): void;
   page(name?: string, properties?: Record<string, unknown>): void;
+  /**
+   * Sets the language the user picked in your product (BCP 47, for example
+   * "de" or "pt-BR"; "_" is changed to "-"). It is not the browser locale.
+   * The value is persisted and sent as `traits.app_language` with every
+   * identify. `null` clears the stored value (the server keeps the last value).
+   */
+  setAppLanguage(tag: string | null): void;
   flush(): Promise<void>;
   reset(): void;
   optIn(): void;
@@ -84,13 +98,23 @@ export interface WhisperrApi {
 
 export interface IdentifyOp {
   kind: "identify";
-  externalUserId: string;
-  /** The anonymous handle this device used before identify(); the server promotes it into the user. */
-  anonymousId: string;
+  /** null for an anonymous identify (traits for the anonymous handle only). */
+  externalUserId: string | null;
+  /**
+   * The anonymous handle this device used before identify(); the server
+   * promotes it into the user. Absent on a partial identify.
+   */
+  anonymousId?: string;
   traits?: Record<string, unknown>;
   preferredChannel?: string;
   channels?: WhisperrChannel[];
   occurredAt: string;
+  /** Local queue identity only (never sent). Absent on ops queued by SDK <= 0.2. */
+  messageId?: string;
+  /** Local only: the identify the SDK queues at start for a stored user. */
+  restore?: boolean;
+  /** Local only: a traits-only update (setAppLanguage); it updates the receipt traits, not its time. */
+  partial?: boolean;
 }
 
 export interface TrackOp {

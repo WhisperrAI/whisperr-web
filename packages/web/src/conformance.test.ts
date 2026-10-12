@@ -5,10 +5,12 @@ import { WhisperrClient } from "./client.js";
 
 // Device-derived trait defaults (timezone / locale) are environment-dependent,
 // so wire.json never pins them (SPEC.md → Reserved trait keys): the harness runs
-// with them disabled so each case's body is exactly the scenario's.
+// with them disabled so each case's body is exactly the scenario's. The same holds
+// for the environment context keys (platform, sdk_*, app_*): disabled here.
 vi.mock("./runtime.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./runtime.js")>()),
   deviceTraits: () => ({}),
+  environmentContext: () => ({}),
 }));
 
 const SPEC_URL =
