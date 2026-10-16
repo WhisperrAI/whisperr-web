@@ -11,7 +11,7 @@ import { WhisperrProvider, useWhisperr } from "@whisperr/react";
 
 function App() {
   return (
-    <WhisperrProvider apiKey="wrk_…">
+    <WhisperrProvider apiKey="wpk_…">
       <Checkout />
     </WhisperrProvider>
   );

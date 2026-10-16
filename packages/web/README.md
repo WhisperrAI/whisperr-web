@@ -9,7 +9,7 @@ npm i @whisperr/web
 ```ts
 import { Whisperr } from "@whisperr/web";
 
-const whisperr = Whisperr.init({ apiKey: "wrk_…", appVersion: "2.4.0" });
+const whisperr = Whisperr.init({ apiKey: "wpk_…", appVersion: "2.4.0" });
 
 // after the user logs in / on session restore
 whisperr.identify("user_123", { email: "ada@acme.com", traits: { plan: "pro" } });
@@ -34,6 +34,22 @@ whisperr.reset();
 - **Cookieless** (localStorage), consent-friendly (`optIn()` / `optOut()`), SSR-safe.
 - Auto-captures SPA pageviews; batches to `/v1/events/batch` with retry/backoff (honors `Retry-After`).
 
+### Email and consent
+
+`identify(userId, { email })` stores the address and claims no consent. Pass `emailOptedIn` with your user's answer when you have it:
+
+```ts
+whisperr.identify("user_123", { email: "ada@acme.com", emailOptedIn: true });
+```
+
+`emailOptedIn` is sent as `opted_in` on the email channel; omit it and nothing is sent. Whether the address then gets messages depends on your app's answer to "Does your signup get permission to email users?" in Whisperr:
+
+- **Yes:** the address is opted in unless you pass `emailOptedIn: false`.
+- **Per user:** only `emailOptedIn: true` opts it in.
+- **No:** the address gets no messages until your server confirms it.
+
+If your app requires a server key for email (the stricter mode), only your backend can opt an address in, with the server key. Never put the server key in browser code.
+
 Using React or Next? See `@whisperr/react` and `@whisperr/next`.
 
 ### Script tag (no build step)
@@ -41,7 +57,7 @@ Using React or Next? See `@whisperr/react` and `@whisperr/next`.
 ```html
 <script>
 !function(){var w=window.whisperr=window.whisperr||[];w._opts={};w.load=function(k,o){w._key=k;w._opts=o||{};var s=document.createElement("script");s.async=1;s.src="https://cdn.whisperr.net/whisperr.js";document.head.appendChild(s)};["identify","track","page","setAppLanguage","flush","reset","optIn","optOut"].forEach(function(m){w[m]=function(){w.push([m].concat([].slice.call(arguments)))}})}();
-whisperr.load("wrk_…");
+whisperr.load("wpk_…");
 </script>
 ```
 

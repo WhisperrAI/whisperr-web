@@ -64,7 +64,7 @@ export function identifyBody(op: IdentifyOp): Record<string, unknown> {
       // wire field is `channel` (the server rejects unknown fields)
       channel: c.type,
       address: c.address,
-      opted_in: c.optedIn ?? true,
+      ...(c.optedIn !== undefined ? { opted_in: c.optedIn } : {}),
       ...(c.verified !== undefined ? { verified: c.verified } : {}),
     }));
   }

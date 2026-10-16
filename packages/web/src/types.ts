@@ -5,7 +5,10 @@ export interface WhisperrChannel {
   type: string;
   /** The address/token for the channel (email address, phone, push token). */
   address: string;
-  /** Whether the user has opted in to this channel. */
+  /**
+   * Whether the user has opted in to this channel. Omitted means the SDK claims
+   * nothing and `opted_in` stays off the wire.
+   */
   optedIn?: boolean;
   /** Whether the address is verified. */
   verified?: boolean;
@@ -18,8 +21,23 @@ export interface IdentifyParams {
    * browser unless you supply them — your values always win.
    */
   traits?: Record<string, unknown>;
-  /** Convenience: expands to an opted-in email channel. */
+  /**
+   * Convenience: expands to an email channel. Whether this address gets
+   * messages depends on `emailOptedIn` and on the app's answer to "Does your
+   * signup get permission to email users?" in Whisperr: with "Yes" it is
+   * opted in unless you pass `emailOptedIn: false`; with "Per user" only
+   * `emailOptedIn: true` opts it in; with "No" it is stored and gets no
+   * messages until your server confirms it. If the app requires a server key
+   * for email (the stricter mode), only your server can opt it in.
+   */
   email?: string;
+  /**
+   * Your user's email consent, sent as `opted_in` on the `email` shortcut.
+   * Pass `true` when the user agreed to email, `false` when they declined.
+   * Omit it to claim nothing. Ignored without `email`, and when `channels` is
+   * set.
+   */
+  emailOptedIn?: boolean;
   /** Convenience: expands to an opted-in SMS channel. */
   phone?: string;
   /** Convenience: expands to an opted-in push channel. */
@@ -31,7 +49,7 @@ export interface IdentifyParams {
 }
 
 export interface WhisperrOptions {
-  /** App ingestion key (wrk_…). Required. */
+  /** App ingestion key, the publishable key (wpk_…). Never ship the server key to a browser. Required. */
   apiKey: string;
   /** Ingestion base URL. Defaults to https://api.whisperr.net. */
   baseUrl?: string;

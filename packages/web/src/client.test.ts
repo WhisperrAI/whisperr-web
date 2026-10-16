@@ -121,6 +121,43 @@ describe("identity continuity", () => {
   });
 });
 
+describe("email consent (identify email shortcut)", () => {
+  async function identifyChannels(params: Parameters<WhisperrClient["identify"]>[1]) {
+    const w = makeClient();
+    w.identify("user_123", params);
+    await w.flush();
+    return captured.find((c) => c.path === "/v1/identify")!.body.channels;
+  }
+
+  it("claims no consent when emailOptedIn is omitted", async () => {
+    const channels = await identifyChannels({ email: "ada@acme.com" });
+    expect(channels).toEqual([{ channel: "email", address: "ada@acme.com" }]);
+  });
+
+  it("sends opted_in: true when the user agreed to email", async () => {
+    const channels = await identifyChannels({ email: "ada@acme.com", emailOptedIn: true });
+    expect(channels).toEqual([{ channel: "email", address: "ada@acme.com", opted_in: true }]);
+  });
+
+  it("sends opted_in: false when the user declined email", async () => {
+    const channels = await identifyChannels({ email: "ada@acme.com", emailOptedIn: false });
+    expect(channels).toEqual([{ channel: "email", address: "ada@acme.com", opted_in: false }]);
+  });
+
+  it("sends no channel for emailOptedIn without an email", async () => {
+    const channels = await identifyChannels({ emailOptedIn: true });
+    expect(channels).toBeUndefined();
+  });
+
+  it("leaves explicit channels as given: no opted_in unless set", async () => {
+    const channels = await identifyChannels({
+      emailOptedIn: true,
+      channels: [{ type: "email", address: "ada@acme.com" }],
+    });
+    expect(channels).toEqual([{ channel: "email", address: "ada@acme.com" }]);
+  });
+});
+
 describe("batching", () => {
   it("coalesces multiple tracks into one batch request", async () => {
     const w = makeClient();
