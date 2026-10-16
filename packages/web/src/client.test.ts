@@ -149,11 +149,34 @@ describe("email consent (identify email shortcut)", () => {
     expect(channels).toBeUndefined();
   });
 
-  it("leaves explicit channels as given: no opted_in unless set", async () => {
+  it("sends no opted_in on an explicit email channel unless optedIn is set", async () => {
     const channels = await identifyChannels({
       emailOptedIn: true,
-      channels: [{ type: "email", address: "ada@acme.com" }],
+      channels: [
+        { type: "email", address: "ada@acme.com" },
+        { type: "email", address: "ada@work.com", optedIn: true },
+      ],
     });
+    expect(channels).toEqual([
+      { channel: "email", address: "ada@acme.com" },
+      { channel: "email", address: "ada@work.com", opted_in: true },
+    ]);
+  });
+
+  it("keeps the opted_in default for non-email channels", async () => {
+    const channels = await identifyChannels({
+      channels: [{ type: "push", address: "tok_1" }],
+    });
+    expect(channels).toEqual([{ channel: "push", address: "tok_1", opted_in: true }]);
+  });
+
+  it("keeps the phone shortcut opted in", async () => {
+    const channels = await identifyChannels({ phone: "+15551234567" });
+    expect(channels).toEqual([{ channel: "sms", address: "+15551234567", opted_in: true }]);
+  });
+
+  it("ignores a non-boolean emailOptedIn from plain JS callers", async () => {
+    const channels = await identifyChannels({ email: "ada@acme.com", emailOptedIn: "yes" as unknown as boolean });
     expect(channels).toEqual([{ channel: "email", address: "ada@acme.com" }]);
   });
 });

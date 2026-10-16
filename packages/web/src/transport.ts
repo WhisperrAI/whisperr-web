@@ -50,6 +50,11 @@ export function wireEvent(e: TrackOp): Record<string, unknown> {
   };
 }
 
+function optedInField(c: { type: string; optedIn?: unknown }): { opted_in?: boolean } {
+  if (typeof c.optedIn === "boolean") return { opted_in: c.optedIn };
+  return c.type === "email" ? {} : { opted_in: true };
+}
+
 /** The /v1/identify body for a queued identify op. */
 export function identifyBody(op: IdentifyOp): Record<string, unknown> {
   const body: Record<string, unknown> = {};
@@ -64,7 +69,9 @@ export function identifyBody(op: IdentifyOp): Record<string, unknown> {
       // wire field is `channel` (the server rejects unknown fields)
       channel: c.type,
       address: c.address,
-      ...(c.optedIn !== undefined ? { opted_in: c.optedIn } : {}),
+      // Email: only the developer's own answer goes on the wire (contract C1).
+      // Other channels keep the old default.
+      ...optedInField(c),
       ...(c.verified !== undefined ? { verified: c.verified } : {}),
     }));
   }

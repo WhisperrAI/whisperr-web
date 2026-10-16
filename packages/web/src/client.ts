@@ -525,7 +525,8 @@ function buildChannels(params: IdentifyParams): WhisperrChannel[] | undefined {
     out.push({
       type: "email",
       address: params.email,
-      ...(params.emailOptedIn !== undefined ? { optedIn: params.emailOptedIn } : {}),
+      // Plain-JS and script-tag callers can pass anything: only a boolean counts.
+      ...(typeof params.emailOptedIn === "boolean" ? { optedIn: params.emailOptedIn } : {}),
     });
   }
   if (params.phone) out.push({ type: "sms", address: params.phone, optedIn: true });
