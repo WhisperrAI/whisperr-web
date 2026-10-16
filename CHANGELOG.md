@@ -13,6 +13,9 @@ All three packages release together.
   channel with no `optedIn` also leaves `opted_in` off the wire (it used to
   send `true`). Other channels keep their old default. Versions before 0.4.0
   send `opted_in: true` on every email.
+- An email channel with `opted_in: true` also sends `consent_source: "user"`.
+  The server needs it to grant consent in "Per user" mode, which tells this
+  apart from the `true` that older versions sent by default.
 - Docs: the browser takes the publishable key (`wpk_…`), not the server key.
 
 ## 0.3.0 — 2026-10-12

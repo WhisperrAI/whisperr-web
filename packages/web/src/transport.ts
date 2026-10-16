@@ -50,9 +50,14 @@ export function wireEvent(e: TrackOp): Record<string, unknown> {
   };
 }
 
-function optedInField(c: { type: string; optedIn?: unknown }): { opted_in?: boolean } {
-  if (typeof c.optedIn === "boolean") return { opted_in: c.optedIn };
-  return c.type === "email" ? {} : { opted_in: true };
+function optedInField(c: { type: string; optedIn?: unknown }): { opted_in?: boolean; consent_source?: "user" } {
+  if (c.type !== "email") return { opted_in: typeof c.optedIn === "boolean" ? c.optedIn : true };
+  if (c.optedIn === true) {
+    // `consent_source: "user"` tells the server this is the app's own consent
+    // answer, not an old SDK's default `true` (contract C1, "Per user" mode).
+    return { opted_in: true, consent_source: "user" };
+  }
+  return c.optedIn === false ? { opted_in: false } : {};
 }
 
 /** The /v1/identify body for a queued identify op. */

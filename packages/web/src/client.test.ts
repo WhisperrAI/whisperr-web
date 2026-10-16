@@ -134,9 +134,9 @@ describe("email consent (identify email shortcut)", () => {
     expect(channels).toEqual([{ channel: "email", address: "ada@acme.com" }]);
   });
 
-  it("sends opted_in: true when the user agreed to email", async () => {
+  it("sends opted_in: true with consent_source: user when the user agreed to email", async () => {
     const channels = await identifyChannels({ email: "ada@acme.com", emailOptedIn: true });
-    expect(channels).toEqual([{ channel: "email", address: "ada@acme.com", opted_in: true }]);
+    expect(channels).toEqual([{ channel: "email", address: "ada@acme.com", opted_in: true, consent_source: "user" }]);
   });
 
   it("sends opted_in: false when the user declined email", async () => {
@@ -159,7 +159,7 @@ describe("email consent (identify email shortcut)", () => {
     });
     expect(channels).toEqual([
       { channel: "email", address: "ada@acme.com" },
-      { channel: "email", address: "ada@work.com", opted_in: true },
+      { channel: "email", address: "ada@work.com", opted_in: true, consent_source: "user" },
     ]);
   });
 
