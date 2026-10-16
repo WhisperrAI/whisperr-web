@@ -48,6 +48,8 @@ whisperr.identify("user_123", { email: "ada@acme.com", emailOptedIn: true });
 - **Per user:** only `emailOptedIn: true` opts it in.
 - **No:** the address gets no messages until your server confirms it.
 
+An earlier opt-out, including the unsubscribe link, is kept: a later identify from the app never opts the address back in. An address that another user in the app already holds stays pending. A new address can also stay pending when the app has reached its hourly limit of new email addresses from the app.
+
 If your app requires a server key for email (the stricter mode), only your backend can opt an address in, with the server key. Never put the server key in browser code.
 
 Using React or Next? See `@whisperr/react` and `@whisperr/next`.
