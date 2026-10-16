@@ -42,7 +42,7 @@ whisperr.reset();
 whisperr.identify("user_123", { email: "ada@acme.com", emailOptedIn: true });
 ```
 
-`emailOptedIn` is sent as `opted_in` on the email channel; omit it and nothing is sent. Whether the address then gets messages depends on your app's answer to "Does your signup get permission to email users?" in Whisperr:
+`emailOptedIn` needs 0.4.0 or later. It is sent as `opted_in` on the email channel; omit it and nothing is sent. Whether the address then gets messages depends on your app's answer to "Does your signup get permission to email users?" in Whisperr:
 
 - **Yes:** the address is opted in unless you pass `emailOptedIn: false`.
 - **Per user:** only `emailOptedIn: true` opts it in.
