@@ -520,7 +520,15 @@ function withDeviceTraits(traits: Record<string, unknown> | undefined): Record<s
 function buildChannels(params: IdentifyParams): WhisperrChannel[] | undefined {
   if (params.channels && params.channels.length) return params.channels;
   const out: WhisperrChannel[] = [];
-  if (params.email) out.push({ type: "email", address: params.email, optedIn: true });
+  if (params.email) {
+    // Only the caller's own consent answer goes on the wire: no flag, no `opted_in`.
+    out.push({
+      type: "email",
+      address: params.email,
+      // Plain-JS and script-tag callers can pass anything: only a boolean counts.
+      ...(typeof params.emailOptedIn === "boolean" ? { optedIn: params.emailOptedIn } : {}),
+    });
+  }
   if (params.phone) out.push({ type: "sms", address: params.phone, optedIn: true });
   if (params.pushToken) out.push({ type: "push", address: params.pushToken, optedIn: true });
   return out.length ? out : undefined;

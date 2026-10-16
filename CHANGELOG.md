@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+All three packages release together.
+
+- New `emailOptedIn` on `identify()`: your user's email consent, sent as
+  `opted_in` on the `email` shortcut. Whether it opts the address in depends on
+  the app's answer to "Does your signup get permission to email users?" in
+  Whisperr.
+- Behavior change: the `email` shortcut no longer sends `opted_in: true` on
+  its own. Without `emailOptedIn` it sends no `opted_in`. An explicit email
+  channel with no `optedIn` also leaves `opted_in` off the wire (it used to
+  send `true`). Other channels keep their old default. Versions before 0.4.0
+  send `opted_in: true` on every email.
+- An email channel with `opted_in: true` also sends `consent_source: "user"`.
+  The server needs it to grant consent in "Per user" mode, which tells this
+  apart from the `true` that older versions sent by default.
+- An identify from the app no longer opts an address back in after the user
+  opted out of it (including through the unsubscribe link). This rule is
+  enforced by the Whisperr backend, which also has to accept
+  `consent_source` before this version ships.
+- Docs: the browser takes the publishable key (`wpk_…`), not the server key.
+
 ## 0.3.0 — 2026-10-12
 
 All three packages (`@whisperr/web`, `@whisperr/react`, `@whisperr/next`)

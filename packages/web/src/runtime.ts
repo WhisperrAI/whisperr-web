@@ -3,7 +3,7 @@
 export const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
 
 export const SDK_NAME = "whisperr-web";
-export const SDK_VERSION = "0.3.0";
+export const SDK_VERSION = "0.4.0";
 
 export function doNotTrackEnabled(): boolean {
   if (!isBrowser) return false;

@@ -27,7 +27,7 @@ interface Stub extends Array<[string, ...unknown[]]> {
   if (!apiKey) {
     if (typeof console !== "undefined") {
       // eslint-disable-next-line no-console
-      console.warn("[whisperr] script loaded but no api key — call whisperr.load('wrk_…')");
+      console.warn("[whisperr] script loaded but no api key — call whisperr.load('wpk_…')");
     }
     return;
   }
