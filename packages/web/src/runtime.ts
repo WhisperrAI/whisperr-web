@@ -12,17 +12,19 @@ export function doNotTrackEnabled(): boolean {
   return dnt === "1" || dnt === "yes";
 }
 
-/** RFC4122-ish v4 id; uses crypto when available, falls back gracefully. */
+/**
+ * UUID v4 from the Web Crypto RNG. `getRandomValues` exists in every browser
+ * this SDK targets (ES2020), on http origins too, where `randomUUID` does not.
+ */
 export function uuid(): string {
-  if (isBrowser && typeof crypto !== "undefined" && "randomUUID" in crypto) {
+  if (typeof crypto.randomUUID === "function" && (typeof isSecureContext === "undefined" || isSecureContext)) {
     return crypto.randomUUID();
   }
-  // Fallback (non-crypto): fine for a client anonymous id.
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6]! & 0x0f) | 0x40;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const hex = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export function nowISO(): string {
