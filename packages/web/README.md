@@ -17,8 +17,8 @@ whisperr.identify("user_123", { email: "ada@acme.com", traits: { plan: "pro" } }
 // when the user picks a language in your product (not the browser locale)
 whisperr.setAppLanguage("pt-BR");
 
-// when something happens
-whisperr.track("subscription_cancelled", { reason: "too_expensive" });
+// when the user does your app's core action (this event name is only an example)
+whisperr.track("report_exported", { format: "pdf" });
 
 // on logout
 whisperr.reset();
@@ -39,6 +39,7 @@ whisperr.reset();
 `identify(userId, { email })` stores the address and claims no consent. Pass `emailOptedIn` with your user's answer when you have it:
 
 ```ts
+// only for a user who said yes when your app asked about email
 whisperr.identify("user_123", { email: "ada@acme.com", emailOptedIn: true });
 ```
 

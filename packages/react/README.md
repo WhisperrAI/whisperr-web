@@ -12,16 +12,17 @@ import { WhisperrProvider, useWhisperr } from "@whisperr/react";
 function App() {
   return (
     <WhisperrProvider apiKey="wpk_…">
-      <Checkout />
+      <ExportButton />
     </WhisperrProvider>
   );
 }
 
-function Checkout() {
+function ExportButton() {
   const whisperr = useWhisperr();
+  // track your app's core action; this event name is only an example
   return (
-    <button onClick={() => whisperr.track("checkout_started", { cart_value: 49 })}>
-      Buy
+    <button onClick={() => whisperr.track("report_exported", { format: "pdf" })}>
+      Export
     </button>
   );
 }

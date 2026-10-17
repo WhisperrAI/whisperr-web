@@ -30,9 +30,10 @@ Then in any client component:
 "use client";
 import { useWhisperr } from "@whisperr/next";
 
-export function CancelButton() {
+export function ExportButton() {
   const whisperr = useWhisperr();
-  return <button onClick={() => whisperr.track("subscription_cancelled")}>Cancel</button>;
+  // track your app's core action; this event name is only an example
+  return <button onClick={() => whisperr.track("report_exported")}>Export</button>;
 }
 ```
 
