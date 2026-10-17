@@ -78,6 +78,8 @@ describe("signalsV3 helpers", () => {
   it("reads function names from V8 and Firefox stacks, without paths or positions", () => {
     const v8 = "TypeError: boom\n    at loadCart (https://x.io/a.js?v=1:10:5)\n    at async CartScreen (https://x.io/b.js:1:1)\n    at https://x.io/c.js:3:3\n    at new Foo (https://x.io/d.js:4:4)\n    at bar (x.js:1:1)";
     expect(stackFunctionNames(v8)).toEqual(["loadCart", "CartScreen", "Foo"]);
+    // A V8 header whose message contains "@" is not a frame.
+    expect(stackFunctionNames("Error: mail ada@x.io failed\n    at send (x.js:1:1)")).toEqual(["send"]);
     expect(stackFunctionNames("loadCart@https://x.io/a.js:10:5\n@https://x.io/c.js:1:1\nCartScreen@x.js:2:2")).toEqual([
       "loadCart",
       "CartScreen",
@@ -179,7 +181,20 @@ describe("visit counters", () => {
     expect(named(c, "app_backgrounded")[1].properties).toMatchObject({ screen_count: 0, event_count: 1 });
   });
 
-  it("puts the same session_id on every event", () => {
+  it("hiding a tab idle for over 30 min starts no session: no app_opened, old session id", () => {
+    const c = client();
+    const [opened] = named(c, "app_opened");
+    vi.advanceTimersByTime(31 * 60 * 1000);
+    window.dispatchEvent(new ErrorEvent("error", { error: new TypeError("late") }));
+    setVisibility("hidden");
+    expect(named(c, "app_opened")).toHaveLength(1);
+    const [bg] = named(c, "app_backgrounded");
+    expect(bg.context.session_id).toBe(opened.context.session_id);
+    expect(bg.properties.session_id).toBe(opened.context.session_id);
+    expect(named(c, "app_error")[0].context.session_id).toBe(opened.context.session_id);
+  });
+
+    it("puts the same session_id on every event", () => {
     const c = client();
     c.track("a");
     c.trackError(new Error("x"));

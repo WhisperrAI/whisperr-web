@@ -66,12 +66,15 @@ export function errorName(error: unknown, fallback = "Error"): string {
 export function stackFunctionNames(stack: unknown, max = 3): string[] {
   if (typeof stack !== "string") return [];
   const names: string[] = [];
-  for (const raw of stack.split("\n")) {
-    const line = raw.trim();
+  const lines = stack.split("\n").map((l) => l.trim());
+  // V8 stacks start with a "Name: message" header; only "at …" lines are frames there.
+  const isV8 = lines.some((l) => l.startsWith("at "));
+  for (const line of lines) {
     let fn: string | undefined;
-    const v8 = /^at (?:async )?(?:new )?([^\s(]+) \(/.exec(line);
-    if (v8) fn = v8[1];
-    else if (!line.startsWith("at ")) {
+    if (isV8) {
+      fn = /^at (?:async )?(?:new )?([^\s(]+) \(/.exec(line)?.[1];
+    } else if (/:\d+(?::\d+)?$/.test(line)) {
+      // SpiderMonkey / JSC frame: "fn@url:line:col" (no header line).
       const at = line.indexOf("@");
       if (at > 0) fn = line.slice(0, at).replace(/^async\*/, "");
     }

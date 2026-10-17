@@ -20,6 +20,7 @@ import {
   setIdentifyReceipt,
   setUserId,
   storeAppLanguage,
+  storedSessionId,
   touchSession,
   uuid,
   type KVStore,
@@ -373,6 +374,15 @@ export class WhisperrClient implements WhisperrApi {
     return id;
   }
 
+  /**
+   * The session id for events that are not activity (app_backgrounded,
+   * app_error): the stored one, even when it has expired, so hiding an idle
+   * tab never starts a session or sends app_opened.
+   */
+  private passiveSessionId(): string {
+    return storedSessionId(this.store) ?? this.session();
+  }
+
   /** Properties every automatic event carries: platform, SDK, app version, locale, timezone. */
   private commonProperties(): Record<string, unknown> {
     return { ...this.envContext, os_name: "web", ...deviceTraits() };
@@ -394,7 +404,7 @@ export class WhisperrClient implements WhisperrApi {
     if (!this.visible) return;
     this.visible = false;
     if (this.muted || !this.automaticEvents) return;
-    const sessionId = this.session();
+    const sessionId = this.passiveSessionId();
     this.enqueueTrack(
       "app_backgrounded",
       {
@@ -412,13 +422,22 @@ export class WhisperrClient implements WhisperrApi {
   }
 
   private installErrorCapture(): void {
+    // Our listeners must never throw into the host page's error handling.
     window.addEventListener("error", (e: ErrorEvent) => {
-      // A cross-origin script error carries no detail at all: nothing to fingerprint.
-      if (!e.error && (!e.message || /^script error\.?$/i.test(e.message))) return;
-      this.recordError(e.error ?? {}, "js");
+      try {
+        // A cross-origin script error carries no detail at all: nothing to fingerprint.
+        if (!e.error && (!e.message || /^script error\.?$/i.test(e.message))) return;
+        this.recordError(e.error ?? {}, "js");
+      } catch {
+        /* ignore */
+      }
     });
     window.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) => {
-      this.recordError(e.reason, "js", undefined, "UnhandledRejection");
+      try {
+        this.recordError(e.reason, "js", undefined, "UnhandledRejection");
+      } catch {
+        /* ignore */
+      }
     });
   }
 
@@ -430,7 +449,7 @@ export class WhisperrClient implements WhisperrApi {
   private recordError(error: unknown, kind: ErrorKind, screen?: string, fallbackName = "Error"): void {
     if (this.muted) return;
     this.errorCount++;
-    const sessionId = this.session();
+    const sessionId = this.passiveSessionId();
     const name = errorName(error, fallbackName);
     const fingerprint = errorFingerprint(name, stackFunctionNames((error as { stack?: unknown } | null)?.stack));
 

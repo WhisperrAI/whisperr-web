@@ -12,11 +12,19 @@ export function doNotTrackEnabled(): boolean {
   return dnt === "1" || dnt === "yes";
 }
 
+let idCounter = 0;
+
 /**
  * UUID v4 from the Web Crypto RNG. `getRandomValues` exists in every browser
  * this SDK targets (ES2020), on http origins too, where `randomUUID` does not.
  */
 export function uuid(): string {
+  if (typeof crypto === "undefined" || typeof crypto.getRandomValues !== "function") {
+    // No Web Crypto (not a supported browser): unique per runtime, not random.
+    const t = Date.now().toString(16).padStart(12, "0").slice(-12);
+    const n = (++idCounter).toString(16).padStart(19, "0").slice(-19);
+    return `${n.slice(0, 8)}-${n.slice(8, 12)}-4${n.slice(12, 15)}-8${n.slice(15, 18)}-${n.slice(18)}${t.slice(1)}`;
+  }
   if (typeof crypto.randomUUID === "function" && (typeof isSecureContext === "undefined" || isSecureContext)) {
     return crypto.randomUUID();
   }
@@ -114,6 +122,16 @@ export function getUserId(store: KVStore): string | null {
 export function clearIdentity(store: KVStore): void {
   store.remove(USER_KEY);
   store.remove(ANON_KEY);
+}
+
+/** The stored session id, expired or not, without marking activity. */
+export function storedSessionId(store: KVStore): string | null {
+  try {
+    const s = JSON.parse(store.get(SESSION_KEY) ?? "null") as { id?: unknown } | null;
+    return typeof s?.id === "string" ? s.id : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Returns the current session id, rolling it over after inactivity. */
