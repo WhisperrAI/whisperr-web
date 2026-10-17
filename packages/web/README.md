@@ -59,7 +59,7 @@ Using React or Next? See `@whisperr/react` and `@whisperr/next`.
 
 ```html
 <script>
-!function(){var w=window.whisperr=window.whisperr||[];w._opts={};w.load=function(k,o){w._key=k;w._opts=o||{};var s=document.createElement("script");s.async=1;s.src="https://cdn.whisperr.net/whisperr.js";document.head.appendChild(s)};["identify","track","page","setAppLanguage","flush","reset","optIn","optOut"].forEach(function(m){w[m]=function(){w.push([m].concat([].slice.call(arguments)))}})}();
+!function(){var w=window.whisperr=window.whisperr||[];w._opts={};w.load=function(k,o){w._key=k;w._opts=o||{};var s=document.createElement("script");s.async=1;s.src="https://cdn.jsdelivr.net/npm/@whisperr/web@0/dist/whisperr.global.js";document.head.appendChild(s)};["identify","track","page","setAppLanguage","flush","reset","optIn","optOut"].forEach(function(m){w[m]=function(){w.push([m].concat([].slice.call(arguments)))}})}();
 whisperr.load("wpk_…");
 </script>
 ```
