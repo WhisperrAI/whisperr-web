@@ -24,7 +24,7 @@ whisperr.track("report_exported", { format: "pdf" });
 whisperr.reset();
 ```
 
-- **~3KB gzipped, zero dependencies.** Off the critical path.
+- **~7KB gzipped, zero dependencies.** Off the critical path.
 - **Never loses exit events** — durable queue + `keepalive` flush on page hide.
 - **Anonymous → identified** — before login, behavior is recorded under an anonymous id; `identify()` merges it into the user, and `reset()` starts a new anonymous visitor.
 - **Identify on every load** — when a user id is stored from an earlier visit, the SDK sends one identify for that user about 2 seconds after load (skipped when your app identifies the same user first, or when the same identify went out less than 24 hours ago). Users who signed in before you installed the SDK are not known to it: call `identify()` on session restore.
@@ -53,13 +53,33 @@ An earlier opt-out, including the unsubscribe link, is kept: a later identify fr
 
 If your app requires a server key for email (the stricter mode), only your backend can opt an address in, with the server key. Never put the server key in browser code.
 
+### Engagement signals
+
+From 0.5.0 the SDK sends these events by itself. Every event carries `context.session_id` (`sess_<uuid>`); a session ends after 30 minutes with no event and is shared by the tabs of your site.
+
+- **`app_opened`**: once per session, on the first event of a new session. `launch_source` is `email` when the landing URL has a `wmid` parameter (sent as `whisperr_message_id`), `widget` or `shortcut` for `wsrc=widget` / `wsrc=shortcut`, and `direct` otherwise. It also carries `link_host`, `link_route` (the path only, with numeric, UUID and 16+ character segments replaced by `:id`) and `utm_source` / `utm_medium` / `utm_campaign` when the URL has them. There is no `cold_start` on the web.
+- **`app_backgrounded`**: when the page is hidden (`visibilitychange` or `pagehide`, sent once). It carries `foreground_ms` (how long the page was visible) and counters for that visible period: `screen_count` (page views), `unique_screen_count`, `event_count` (your own `track()` events), `error_count` and `session_id`.
+- **`app_error`**: for uncaught errors and unhandled promise rejections. It carries the error's class name (`error_name`), a `fingerprint`, `error_kind`, `fatal: false`, the last page name as `screen_name`, and `session_id`. The SDK never sends the error message, the stack or a URL. Each fingerprint is sent once per session, and at most 20 errors per session; `error_count` still counts every error. A cross-origin `Script error.` with no detail is ignored.
+
+Report an error your code caught:
+
+```ts
+try {
+  await loadOffers();
+} catch (err) {
+  whisperr.trackError(err, { screen: "Offers", kind: "network" }); // kind defaults to "handled"
+}
+```
+
+`page_viewed` stays as it was. Set `captureErrors: false` to stop the automatic `app_error` capture, or `automaticEvents: false` to stop all automatic events; `trackError()` works in both cases. `optOut()` stops all of them.
+
 Using React or Next? See `@whisperr/react` and `@whisperr/next`.
 
 ### Script tag (no build step)
 
 ```html
 <script>
-!function(){var w=window.whisperr=window.whisperr||[];w._opts={};w.load=function(k,o){w._key=k;w._opts=o||{};var s=document.createElement("script");s.async=1;s.src="https://cdn.jsdelivr.net/npm/@whisperr/web@0/dist/whisperr.global.js";document.head.appendChild(s)};["identify","track","page","setAppLanguage","flush","reset","optIn","optOut"].forEach(function(m){w[m]=function(){w.push([m].concat([].slice.call(arguments)))}})}();
+!function(){var w=window.whisperr=window.whisperr||[];w._opts={};w.load=function(k,o){w._key=k;w._opts=o||{};var s=document.createElement("script");s.async=1;s.src="https://cdn.jsdelivr.net/npm/@whisperr/web@0/dist/whisperr.global.js";document.head.appendChild(s)};["identify","track","page","setAppLanguage","trackError","flush","reset","optIn","optOut"].forEach(function(m){w[m]=function(){w.push([m].concat([].slice.call(arguments)))}})}();
 whisperr.load("wpk_…");
 </script>
 ```
@@ -71,7 +91,9 @@ whisperr.load("wpk_…");
 | `apiKey` | — | required |
 | `baseUrl` | `https://api.whisperr.net` | ingestion base |
 | `flushAt` / `flushIntervalMs` | `20` / `10000` | batch triggers |
-| `autocapturePageviews` | `true` | SPA `page_viewed` capture |
+| `autocapturePageviews` | value of `automaticEvents` | SPA `page_viewed` capture |
+| `automaticEvents` | `true` | `app_opened`, `app_backgrounded`, automatic `app_error` and page views |
+| `captureErrors` | `true` | automatic `app_error` capture (`trackError()` works either way) |
 | `respectDoNotTrack` | `false` | honor DNT |
 | `persistence` | `localStorage` | or `memory` |
 | `appVersion` / `appBuild` | — | sent as `context.app_version` / `context.app_build` |

@@ -120,7 +120,7 @@ afterEach(() => {
 });
 
 function makeClient(): WhisperrClient {
-  return new WhisperrClient({ apiKey: "wrk_test", flushIntervalMs: 1e9, autocapturePageviews: false });
+  return new WhisperrClient({ apiKey: "wrk_test", flushIntervalMs: 1e9, autocapturePageviews: false, automaticEvents: false });
 }
 
 async function run(c: V2Case): Promise<void> {

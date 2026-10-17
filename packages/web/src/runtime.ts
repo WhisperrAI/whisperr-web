@@ -3,7 +3,7 @@
 export const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
 
 export const SDK_NAME = "whisperr-web";
-export const SDK_VERSION = "0.4.0";
+export const SDK_VERSION = "0.5.0";
 
 export function doNotTrackEnabled(): boolean {
   if (!isBrowser) return false;
@@ -116,6 +116,15 @@ export function clearIdentity(store: KVStore): void {
 
 /** Returns the current session id, rolling it over after inactivity. */
 export function currentSessionId(store: KVStore): string {
+  return touchSession(store).id;
+}
+
+/**
+ * Marks activity on the session and returns its id; `isNew` is true when this
+ * call started the session (first event, or 30 min without one). The session
+ * is shared by every tab of the origin through the store.
+ */
+export function touchSession(store: KVStore): { id: string; isNew: boolean } {
   const raw = store.get(SESSION_KEY);
   const now = Date.now();
   if (raw) {
@@ -123,7 +132,7 @@ export function currentSessionId(store: KVStore): string {
       const s = JSON.parse(raw) as { id: string; last: number };
       if (now - s.last < SESSION_TIMEOUT_MS) {
         store.set(SESSION_KEY, JSON.stringify({ id: s.id, last: now }));
-        return s.id;
+        return { id: s.id, isNew: false };
       }
     } catch {
       /* fall through to new session */
@@ -131,7 +140,7 @@ export function currentSessionId(store: KVStore): string {
   }
   const id = `sess_${uuid()}`;
   store.set(SESSION_KEY, JSON.stringify({ id, last: now }));
-  return id;
+  return { id, isNew: true };
 }
 
 /**
@@ -139,10 +148,10 @@ export function currentSessionId(store: KVStore): string {
  * never carries `locale`: the server reads `context.locale` as the message
  * language of that one event, so only the caller may set it.
  */
-export function pageContext(store: KVStore): Record<string, unknown> {
+export function pageContext(store: KVStore, sessionId?: string): Record<string, unknown> {
   const ctx: Record<string, unknown> = {
     library: { name: SDK_NAME, version: SDK_VERSION },
-    session_id: currentSessionId(store),
+    session_id: sessionId ?? currentSessionId(store),
   };
   if (isBrowser) {
     ctx.page = {

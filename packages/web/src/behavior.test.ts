@@ -101,6 +101,7 @@ describe("behavior conformance (whisperr-spec)", () => {
         apiKey: "wrk_test",
         flushIntervalMs: 1e9,
         autocapturePageviews: false,
+        automaticEvents: false, // signals v3 events are covered in signals.test.ts
         maxRetries: c.clientOptions?.maxRetries ?? 0,
         onError: (e) => errors.push(e),
       });

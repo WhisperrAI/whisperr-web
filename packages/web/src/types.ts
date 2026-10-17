@@ -61,8 +61,20 @@ export interface WhisperrOptions {
   maxQueueSize?: number;
   /** Max events per batch request (hard backend cap is 500). Default 500. */
   maxBatchSize?: number;
-  /** Auto-capture SPA pageviews (page_viewed). Default true. */
+  /** Auto-capture SPA pageviews (page_viewed). Default: the value of `automaticEvents` (true). */
   autocapturePageviews?: boolean;
+  /**
+   * Send the automatic engagement events: `app_opened` once per session,
+   * `app_backgrounded` when the page is hidden, automatic `app_error` capture,
+   * and page views (unless `autocapturePageviews` is set). Default true.
+   */
+  automaticEvents?: boolean;
+  /**
+   * Capture uncaught errors and unhandled promise rejections as `app_error`
+   * (name and fingerprint only, never the message or stack). Default true.
+   * `trackError()` works either way.
+   */
+  captureErrors?: boolean;
   /** Honor the browser's Do Not Track signal. Default false. */
   respectDoNotTrack?: boolean;
   /** Where to persist the queue + ids. Default "localStorage". */
@@ -86,6 +98,13 @@ export interface WhisperrOptions {
   appBuild?: string;
 }
 
+export interface TrackErrorOptions {
+  /** Screen (page) name to attach; defaults to the last page view. */
+  screen?: string;
+  /** `error_kind`: "handled" (default), "network", "screen", "js", "native" or "dart". */
+  kind?: "js" | "dart" | "native" | "handled" | "network" | "screen";
+}
+
 export interface WhisperrError {
   type: "auth" | "dropped" | "retry_exhausted";
   message: string;
@@ -97,6 +116,12 @@ export interface WhisperrApi {
   identify(externalUserId: string, params?: IdentifyParams): void;
   track(eventType: string, properties?: Record<string, unknown>, context?: Record<string, unknown>): void;
   page(name?: string, properties?: Record<string, unknown>): void;
+  /**
+   * Reports an error your code handled as `app_error` (`error_kind` defaults to
+   * "handled"). Sends the error's class name and a fingerprint, never its
+   * message or stack. At most once per fingerprint and 20 per session.
+   */
+  trackError(error: unknown, options?: TrackErrorOptions): void;
   /**
    * Sets the language the user picked in your product (BCP 47, for example
    * "de" or "pt-BR"; "_" is changed to "-"). It is not the browser locale.
