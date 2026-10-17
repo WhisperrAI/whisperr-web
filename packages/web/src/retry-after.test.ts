@@ -57,6 +57,7 @@ describe("Retry-After on delivery", () => {
       apiKey: "wrk_test",
       flushIntervalMs: 1e9,
       autocapturePageviews: false,
+        automaticEvents: false, // signals v3 events are covered in signals.test.ts
       persistence: "memory",
     });
     await vi.advanceTimersByTimeAsync(0); // settle the startup drain

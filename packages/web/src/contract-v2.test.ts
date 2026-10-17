@@ -80,6 +80,7 @@ function makeClient(extra: Partial<WhisperrOptions> = {}): WhisperrClient {
     apiKey: "wrk_test",
     flushIntervalMs: 1e9,
     autocapturePageviews: false,
+        automaticEvents: false, // signals v3 events are covered in signals.test.ts
     maxRetries: 0,
     ...extra,
   });

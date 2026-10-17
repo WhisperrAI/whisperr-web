@@ -20,12 +20,26 @@ import {
   setIdentifyReceipt,
   setUserId,
   storeAppLanguage,
+  storedSessionId,
+  touchSession,
   uuid,
   type KVStore,
 } from "./runtime.js";
+import {
+  AUTOMATIC_EVENTS,
+  ERROR_KINDS,
+  MAX_ERRORS_PER_SESSION,
+  errorFingerprint,
+  errorName,
+  landingProperties,
+  redactRoute,
+  stackFunctionNames,
+  type ErrorKind,
+} from "./signals.js";
 import type {
   IdentifyParams,
   QueuedOp,
+  TrackErrorOptions,
   TrackOp,
   WhisperrApi,
   WhisperrChannel,
@@ -34,6 +48,8 @@ import type {
 } from "./types.js";
 
 const OPTOUT_KEY = "whisperr.optout";
+// Per-session app_error dedupe/cap state, shared by the tabs of the session.
+const ERRORS_KEY = "whisperr.session_errors";
 const DEFAULT_BASE = "https://api.whisperr.net";
 const SNAKE_CASE = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
 
@@ -76,6 +92,16 @@ export class WhisperrClient implements WhisperrApi {
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private restoreTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Engagement signals (app_opened / app_backgrounded / app_error).
+  private readonly automaticEvents: boolean;
+  private visible = true;
+  private visibleSince = 0;
+  private screenCount = 0;
+  private uniqueScreens = new Set<string>();
+  private eventCount = 0;
+  private errorCount = 0;
+  private lastScreen: string | undefined;
+
   constructor(options: WhisperrOptions) {
     const baseUrl = (options.baseUrl ?? DEFAULT_BASE).replace(/\/+$/, "");
     this.flushAt = options.flushAt ?? 20;
@@ -84,6 +110,7 @@ export class WhisperrClient implements WhisperrApi {
     this.debug = options.debug ?? false;
     this.onError = options.onError;
     this.envContext = environmentContext(options);
+    this.automaticEvents = options.automaticEvents ?? true;
 
     this.store = makeStore(options.persistence ?? "localStorage");
     this.queue = new DurableQueue(this.store, options.maxQueueSize ?? 1000);
@@ -100,9 +127,15 @@ export class WhisperrClient implements WhisperrApi {
 
     if (!this.muted) {
       this.startTimers(options.flushIntervalMs ?? 10000);
+      this.visible = document.visibilityState !== "hidden";
+      this.visibleSince = monotonicNow();
       this.installLifecycle();
+      if (this.automaticEvents) {
+        this.session(); // app_opened when this load starts a session
+        if (options.captureErrors ?? true) this.installErrorCapture();
+      }
       if (this.userId) this.scheduleRestoreIdentify();
-      if (options.autocapturePageviews ?? true) this.installPageviews();
+      if (options.autocapturePageviews ?? this.automaticEvents) this.installPageviews();
       // Drain anything left from a previous page load.
       void this.flush();
     }
@@ -145,17 +178,21 @@ export class WhisperrClient implements WhisperrApi {
       }
       return;
     }
-    this.enqueue({
-      kind: "track",
-      eventType: type,
-      externalUserId: this.userId, // null before identify(): sent under anonymousId
-      anonymousId: this.anonId,
-      properties,
-      context: { ...pageContext(this.store), ...this.envContext, ...context },
-      occurredAt: nowISO(),
-      messageId: uuid(),
-    });
-    if (this.queue.size >= this.flushAt) void this.flush();
+    const sessionId = this.session();
+    if (type === "page_viewed") {
+      const screen = typeof properties?.name === "string" && properties.name ? properties.name : currentRoute();
+      this.screenCount++;
+      if (screen) this.uniqueScreens.add(screen);
+      this.lastScreen = screen;
+    } else if (!AUTOMATIC_EVENTS.has(type)) {
+      this.eventCount++;
+    }
+    this.enqueueTrack(type, properties, context, sessionId);
+  }
+
+  trackError(error: unknown, options: TrackErrorOptions = {}): void {
+    const kind = ERROR_KINDS.includes(options.kind as ErrorKind) ? (options.kind as ErrorKind) : "handled";
+    this.recordError(error, kind, options.screen);
   }
 
   page(name?: string, properties?: Record<string, unknown>): void {
@@ -303,6 +340,147 @@ export class WhisperrClient implements WhisperrApi {
     this.queue.enqueue(op);
   }
 
+  private enqueueTrack(
+    eventType: string,
+    properties: Record<string, unknown> | undefined,
+    context: Record<string, unknown> | undefined,
+    sessionId: string,
+  ): void {
+    this.enqueue({
+      kind: "track",
+      eventType,
+      externalUserId: this.userId, // null before identify(): sent under anonymousId
+      anonymousId: this.anonId,
+      properties,
+      context: { ...pageContext(this.store, sessionId), ...this.envContext, ...context },
+      occurredAt: nowISO(),
+      messageId: uuid(),
+    });
+    if (this.queue.size >= this.flushAt) void this.flush();
+  }
+
+  // ---- engagement signals (whisperr-spec → Engagement signals v3) ----
+
+  /**
+   * Marks session activity and returns the session id. The first event of a
+   * new session (first load, or 30 min without an event) is preceded by one
+   * `app_opened` attributed from the current URL.
+   */
+  private session(): string {
+    const { id, isNew } = touchSession(this.store);
+    if (isNew && this.automaticEvents && isBrowser) {
+      this.enqueueTrack("app_opened", { ...this.commonProperties(), ...landingProperties(location.href) }, undefined, id);
+    }
+    return id;
+  }
+
+  /**
+   * The session id for events that are not activity (app_backgrounded,
+   * app_error): the stored one, even when it has expired, so hiding an idle
+   * tab never starts a session or sends app_opened.
+   */
+  private passiveSessionId(): string {
+    return storedSessionId(this.store) ?? this.session();
+  }
+
+  /** Properties every automatic event carries: platform, SDK, app version, locale, timezone. */
+  private commonProperties(): Record<string, unknown> {
+    return { ...this.envContext, os_name: "web", ...deviceTraits() };
+  }
+
+  private onVisible(): void {
+    if (this.visible) return;
+    this.visible = true;
+    this.visibleSince = monotonicNow();
+    this.screenCount = 0;
+    this.uniqueScreens.clear();
+    this.eventCount = 0;
+    this.errorCount = 0;
+    if (!this.muted && this.automaticEvents) this.session();
+  }
+
+  /** visibilitychange → hidden and pagehide both land here; only the first of them sends. */
+  private onHidden(): void {
+    if (!this.visible) return;
+    this.visible = false;
+    if (this.muted || !this.automaticEvents) return;
+    const sessionId = this.passiveSessionId();
+    this.enqueueTrack(
+      "app_backgrounded",
+      {
+        ...this.commonProperties(),
+        foreground_ms: Math.max(0, Math.round(monotonicNow() - this.visibleSince)),
+        session_id: sessionId,
+        screen_count: this.screenCount,
+        unique_screen_count: this.uniqueScreens.size,
+        event_count: this.eventCount,
+        error_count: this.errorCount,
+      },
+      undefined,
+      sessionId,
+    );
+  }
+
+  private installErrorCapture(): void {
+    // Our listeners must never throw into the host page's error handling.
+    window.addEventListener("error", (e: ErrorEvent) => {
+      try {
+        // A cross-origin script error carries no detail at all: nothing to fingerprint.
+        if (!e.error && (!e.message || /^script error\.?$/i.test(e.message))) return;
+        this.recordError(e.error ?? {}, "js");
+      } catch {
+        /* ignore */
+      }
+    });
+    window.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) => {
+      try {
+        this.recordError(e.reason, "js", undefined, "UnhandledRejection");
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
+  /**
+   * Sends one `app_error` (name + fingerprint, never the message or stack),
+   * at most once per fingerprint and 20 per session. `error_count` on the next
+   * `app_backgrounded` still counts every occurrence. Never flushes at once.
+   */
+  private recordError(error: unknown, kind: ErrorKind, screen?: string, fallbackName = "Error"): void {
+    if (this.muted) return;
+    this.errorCount++;
+    const sessionId = this.passiveSessionId();
+    const name = errorName(error, fallbackName);
+    const fingerprint = errorFingerprint(name, stackFunctionNames((error as { stack?: unknown } | null)?.stack));
+
+    let seen: { id: string; fps: string[] } = { id: sessionId, fps: [] };
+    try {
+      const raw = JSON.parse(this.store.get(ERRORS_KEY) ?? "null") as typeof seen | null;
+      if (raw?.id === sessionId && Array.isArray(raw.fps)) seen = raw;
+    } catch {
+      /* corrupt: start over */
+    }
+    if (seen.fps.includes(fingerprint) || seen.fps.length >= MAX_ERRORS_PER_SESSION) return;
+    seen.fps.push(fingerprint);
+    this.store.set(ERRORS_KEY, JSON.stringify(seen));
+
+    const screenName = screen || this.lastScreen;
+    this.enqueueTrack(
+      "app_error",
+      {
+        ...this.commonProperties(),
+        error_kind: kind,
+        fatal: false, // a browser page keeps running after an uncaught error
+        error_name: name,
+        fingerprint,
+        ...(screenName ? { screen_name: screenName } : {}),
+        session_id: sessionId,
+      },
+      undefined,
+      sessionId,
+    );
+  }
+
   private languageTraits(): Record<string, unknown> | undefined {
     const lang = getAppLanguage(this.store);
     return lang ? { app_language: lang } : undefined;
@@ -403,11 +581,19 @@ export class WhisperrClient implements WhisperrApi {
   }
 
   private installLifecycle(): void {
-    const onExit = () => this.flushOnExit();
+    const onExit = () => {
+      this.onHidden(); // queue app_backgrounded first so the exit flush carries it
+      this.flushOnExit();
+    };
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") onExit();
+      else this.onVisible();
     });
     window.addEventListener("pagehide", onExit);
+    // Back/forward cache restore: the page is visible again without a new load.
+    window.addEventListener("pageshow", (e: PageTransitionEvent) => {
+      if (e.persisted) this.onVisible();
+    });
   }
 
   /**
@@ -553,6 +739,16 @@ function utf8Length(s: string): number {
     } else n += 3;
   }
   return n;
+}
+
+/** Monotonic clock for foreground_ms (wall-clock changes don't skew it). */
+function monotonicNow(): number {
+  return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+}
+
+/** The redacted current path, used as the screen name of an unnamed page view. */
+function currentRoute(): string | undefined {
+  return isBrowser ? redactRoute(location.pathname) : undefined;
 }
 
 function delay(ms: number): Promise<void> {

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0 — 2026-10-17
+
+All three packages release together. Implements whisperr-spec "Engagement
+signals (v3)" for the browser. Needs a backend that reserves `app_error`.
+
+- `app_opened` once per web session, with `launch_source` (`email` from a
+  `wmid` landing parameter, `widget` / `shortcut` from `wsrc`, else `direct`),
+  `whisperr_message_id`, `link_host`, a redacted `link_route` and `utm_*`.
+- `app_backgrounded` when the page is hidden, with `foreground_ms` and the
+  visit counters `screen_count`, `unique_screen_count`, `event_count`,
+  `error_count` and `session_id`.
+- `app_error` from uncaught errors and unhandled rejections: class name and
+  fingerprint only, once per fingerprint and at most 20 per session.
+- New `trackError(error, { screen, kind })` and the options `captureErrors`
+  and `automaticEvents` (both default `true`).
+- The core bundle grows to about 7.3 KB gzipped.
+
 ## 0.4.0 — 2026-10-17
 
 All three packages release together.

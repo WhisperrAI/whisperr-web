@@ -3,7 +3,7 @@
 export const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
 
 export const SDK_NAME = "whisperr-web";
-export const SDK_VERSION = "0.4.0";
+export const SDK_VERSION = "0.5.0";
 
 export function doNotTrackEnabled(): boolean {
   if (!isBrowser) return false;
@@ -12,17 +12,27 @@ export function doNotTrackEnabled(): boolean {
   return dnt === "1" || dnt === "yes";
 }
 
-/** RFC4122-ish v4 id; uses crypto when available, falls back gracefully. */
+let idCounter = 0;
+
+/**
+ * UUID v4 from the Web Crypto RNG. `getRandomValues` exists in every browser
+ * this SDK targets (ES2020), on http origins too, where `randomUUID` does not.
+ */
 export function uuid(): string {
-  if (isBrowser && typeof crypto !== "undefined" && "randomUUID" in crypto) {
+  if (typeof crypto === "undefined" || typeof crypto.getRandomValues !== "function") {
+    // No Web Crypto (not a supported browser): unique per runtime, not random.
+    const t = Date.now().toString(16).padStart(12, "0").slice(-12);
+    const n = (++idCounter).toString(16).padStart(19, "0").slice(-19);
+    return `${n.slice(0, 8)}-${n.slice(8, 12)}-4${n.slice(12, 15)}-8${n.slice(15, 18)}-${n.slice(18)}${t.slice(1)}`;
+  }
+  if (typeof crypto.randomUUID === "function" && (typeof isSecureContext === "undefined" || isSecureContext)) {
     return crypto.randomUUID();
   }
-  // Fallback (non-crypto): fine for a client anonymous id.
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6]! & 0x0f) | 0x40;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const hex = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export function nowISO(): string {
@@ -114,8 +124,27 @@ export function clearIdentity(store: KVStore): void {
   store.remove(ANON_KEY);
 }
 
+/** The stored session id, expired or not, without marking activity. */
+export function storedSessionId(store: KVStore): string | null {
+  try {
+    const s = JSON.parse(store.get(SESSION_KEY) ?? "null") as { id?: unknown } | null;
+    return typeof s?.id === "string" ? s.id : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Returns the current session id, rolling it over after inactivity. */
 export function currentSessionId(store: KVStore): string {
+  return touchSession(store).id;
+}
+
+/**
+ * Marks activity on the session and returns its id; `isNew` is true when this
+ * call started the session (first event, or 30 min without one). The session
+ * is shared by every tab of the origin through the store.
+ */
+export function touchSession(store: KVStore): { id: string; isNew: boolean } {
   const raw = store.get(SESSION_KEY);
   const now = Date.now();
   if (raw) {
@@ -123,7 +152,7 @@ export function currentSessionId(store: KVStore): string {
       const s = JSON.parse(raw) as { id: string; last: number };
       if (now - s.last < SESSION_TIMEOUT_MS) {
         store.set(SESSION_KEY, JSON.stringify({ id: s.id, last: now }));
-        return s.id;
+        return { id: s.id, isNew: false };
       }
     } catch {
       /* fall through to new session */
@@ -131,7 +160,7 @@ export function currentSessionId(store: KVStore): string {
   }
   const id = `sess_${uuid()}`;
   store.set(SESSION_KEY, JSON.stringify({ id, last: now }));
-  return id;
+  return { id, isNew: true };
 }
 
 /**
@@ -139,10 +168,10 @@ export function currentSessionId(store: KVStore): string {
  * never carries `locale`: the server reads `context.locale` as the message
  * language of that one event, so only the caller may set it.
  */
-export function pageContext(store: KVStore): Record<string, unknown> {
+export function pageContext(store: KVStore, sessionId?: string): Record<string, unknown> {
   const ctx: Record<string, unknown> = {
     library: { name: SDK_NAME, version: SDK_VERSION },
-    session_id: currentSessionId(store),
+    session_id: sessionId ?? currentSessionId(store),
   };
   if (isBrowser) {
     ctx.page = {
