@@ -14,8 +14,21 @@ signals (v3)" for the browser. Needs a backend that reserves `app_error`.
 - `app_error` from uncaught errors and unhandled rejections: class name and
   fingerprint only, once per fingerprint and at most 20 per session.
 - New `trackError(error, { screen, kind })` and the options `captureErrors`
-  and `automaticEvents` (both default `true`).
+  and `automaticEvents` (both default `true`). `trackError` is also on
+  `useWhisperr()` in `@whisperr/react` and `@whisperr/next`, and in the
+  script-tag stub.
+- `autocapturePageviews` now defaults to the value of `automaticEvents`, so
+  `automaticEvents: false` also stops automatic `page_viewed`.
+- `app_backgrounded` and `app_error` never start a session: they carry the
+  stored session id, so hiding a tab idle for 30+ minutes sends no
+  `app_opened`.
+- Ids (anonymous id, session id) now come from the Web Crypto RNG
+  (`getRandomValues`, so http origins too) instead of falling back to
+  `Math.random`.
 - The core bundle grows to about 7.3 KB gzipped.
+- Docs: the script-tag snippet loads the published build from jsDelivr
+  (`cdn.whisperr.net` did not resolve), and the README examples use a neutral
+  example event and say `emailOptedIn: true` is only for a user who said yes.
 
 ## 0.4.0 — 2026-10-17
 
