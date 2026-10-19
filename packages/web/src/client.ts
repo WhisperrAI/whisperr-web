@@ -345,6 +345,7 @@ export class WhisperrClient implements WhisperrApi {
     properties: Record<string, unknown> | undefined,
     context: Record<string, unknown> | undefined,
     sessionId: string,
+    withPage = true,
   ): void {
     this.enqueue({
       kind: "track",
@@ -352,7 +353,7 @@ export class WhisperrClient implements WhisperrApi {
       externalUserId: this.userId, // null before identify(): sent under anonymousId
       anonymousId: this.anonId,
       properties,
-      context: { ...pageContext(this.store, sessionId), ...this.envContext, ...context },
+      context: { ...pageContext(this.store, sessionId, withPage), ...this.envContext, ...context },
       occurredAt: nowISO(),
       messageId: uuid(),
     });
@@ -478,6 +479,7 @@ export class WhisperrClient implements WhisperrApi {
       },
       undefined,
       sessionId,
+      false, // no context.page: an app_error never carries a URL (spec)
     );
   }
 

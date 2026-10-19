@@ -4,7 +4,7 @@ The Whisperr web SDKs — a tiny, framework-agnostic core plus thin React/Next a
 
 | Package | What it is |
 |---|---|
-| [`@whisperr/web`](packages/web) | Framework-agnostic core (~3KB gz). Works in any JS app. |
+| [`@whisperr/web`](packages/web) | Framework-agnostic core (~7KB gz). Works in any JS app. |
 | [`@whisperr/react`](packages/react) | `<WhisperrProvider>` + `useWhisperr()`. |
 | [`@whisperr/next`](packages/next) | App Router client-boundary provider. |
 
