@@ -236,6 +236,26 @@ describe("app_error", () => {
     expect(json).not.toContain("token");
   });
 
+  it("sends no URL with an app_error, from the page context or anywhere else", () => {
+    window.history.pushState({}, "", "/reset?token=secret-reset-token");
+    try {
+      const c = client();
+      window.dispatchEvent(new ErrorEvent("error", { error: throwIn("pay"), message: "secret" }));
+      c.trackError(new RangeError("handled"), { screen: "Reset" });
+      const errors = named(c, "app_error");
+      expect(errors).toHaveLength(2);
+      for (const e of errors) expect(e.context.page).toBeUndefined();
+      const json = JSON.stringify(errors);
+      expect(json).not.toContain("secret-reset-token");
+      expect(json).not.toContain("http");
+      // other events keep their page context
+      c.track("a");
+      expect(sent(c).find((e) => e.event_type === "a")?.context.page).toBeDefined();
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
   it("ignores a cross-origin Script error with no error object", () => {
     const c = client();
     window.dispatchEvent(new ErrorEvent("error", { message: "Script error." }));

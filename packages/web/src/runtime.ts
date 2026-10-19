@@ -164,22 +164,24 @@ export function touchSession(store: KVStore): { id: string; isNew: boolean } {
 }
 
 /**
- * Lightweight, non-PII page + library context attached to every event. It
- * never carries `locale`: the server reads `context.locale` as the message
+ * Page + library context attached to every event (`withPage: false` leaves out
+ * `page`, which holds the URL, for `app_error`). It never carries `locale`: the server reads `context.locale` as the message
  * language of that one event, so only the caller may set it.
  */
-export function pageContext(store: KVStore, sessionId?: string): Record<string, unknown> {
+export function pageContext(store: KVStore, sessionId?: string, withPage = true): Record<string, unknown> {
   const ctx: Record<string, unknown> = {
     library: { name: SDK_NAME, version: SDK_VERSION },
     session_id: sessionId ?? currentSessionId(store),
   };
   if (isBrowser) {
-    ctx.page = {
-      url: location.href,
-      path: location.pathname,
-      referrer: document.referrer || undefined,
-      title: document.title || undefined,
-    };
+    if (withPage) {
+      ctx.page = {
+        url: location.href,
+        path: location.pathname,
+        referrer: document.referrer || undefined,
+        title: document.title || undefined,
+      };
+    }
     ctx.user_agent = navigator.userAgent;
   }
   return ctx;
