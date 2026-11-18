@@ -33,7 +33,14 @@ vi.mock("./runtime.js", async (importOriginal) => {
 });
 
 const WEB_SECTIONS = ["restoreIdentify", "appLanguage", "versionContext"];
-const SPEC_URL = "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/conformance/v2.json";
+// Mobile sections whose rule holds on web too: run the cases that use only
+// steps this harness knows (anonymousReset's push cases need a push token
+// and a push permission, which the web SDK does not have).
+const MOBILE_SECTIONS_RUN_ON_WEB = ["anonymousReset"];
+const WEB_STEPS = new Set(["identify", "track", "setAppLanguage", "restart", "reset", "optOut", "optIn", "advanceClock", "setDevice"]);
+// To test against an unmerged spec branch, set it here and as `ref:` in ci.yml.
+const SPEC_REF = "fix/reset-without-user-keeps-handle";
+const SPEC_URL = `https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/${SPEC_REF}/conformance/v2.json`;
 // The SDK waits this long at start before it queues the restore identify; a
 // `restart` step lets it run out (the object form identifies before it does).
 const RESTORE_DELAY_MS = 2000;
@@ -212,6 +219,20 @@ describe("contract v2 conformance (whisperr-spec conformance/v2.json)", () => {
       expect(section!.appliesTo).toContain("web");
     });
     for (const c of section?.cases ?? []) {
+      it(`${name}: ${c.name}`, async () => {
+        await run(c);
+        check(c);
+      });
+    }
+  }
+  for (const name of MOBILE_SECTIONS_RUN_ON_WEB) {
+    const section = spec.sections[name];
+    const cases = (section?.cases ?? []).filter((c) => c.steps.every((s) => WEB_STEPS.has(Object.keys(s)[0]!)));
+    it(`${name}: section exists and has cases web can run`, () => {
+      expect(section, name).toBeTruthy();
+      expect(cases.length, name).toBeGreaterThan(0);
+    });
+    for (const c of cases) {
       it(`${name}: ${c.name}`, async () => {
         await run(c);
         check(c);

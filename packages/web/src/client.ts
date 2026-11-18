@@ -229,6 +229,13 @@ export class WhisperrClient implements WhisperrApi {
   }
 
   reset(): void {
+    // Nobody to log out: the device is still the same anonymous visitor, so
+    // keep the handle (SPEC.md -> Anonymous visitors). Apps call reset() on
+    // every signed-out state; rotating here would mint a new anonymous user
+    // per call, and identify() promotes only the last handle. The stored user
+    // is read at construction, so there is no restore to wait for; the store
+    // is checked too in case another tab signed in.
+    if (!this.userId && !getUserId(this.store)) return;
     this.cancelRestoreIdentify();
     clearIdentity(this.store);
     clearIdentifyReceipt(this.store);

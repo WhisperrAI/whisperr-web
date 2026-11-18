@@ -130,6 +130,11 @@ export interface WhisperrApi {
    */
   setAppLanguage(tag: string | null): void;
   flush(): Promise<void>;
+  /**
+   * Logs out: forgets the user and starts a new anonymous visitor. With no
+   * user signed in it does nothing (the anonymous id stays), so it is safe to
+   * call on every signed-out state.
+   */
   reset(): void;
   optIn(): void;
   optOut(): void;
