@@ -39,7 +39,7 @@ const WEB_SECTIONS = ["restoreIdentify", "appLanguage", "versionContext"];
 const MOBILE_SECTIONS_RUN_ON_WEB = ["anonymousReset"];
 const WEB_STEPS = new Set(["identify", "track", "setAppLanguage", "restart", "reset", "optOut", "optIn", "advanceClock", "setDevice"]);
 // To test against an unmerged spec branch, set it here and as `ref:` in ci.yml.
-const SPEC_REF = "fix/reset-without-user-keeps-handle";
+const SPEC_REF = "main";
 const SPEC_URL = `https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/${SPEC_REF}/conformance/v2.json`;
 // The SDK waits this long at start before it queues the restore identify; a
 // `restart` step lets it run out (the object form identifies before it does).
