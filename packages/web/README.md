@@ -26,7 +26,7 @@ whisperr.reset();
 
 - **~7KB gzipped, zero dependencies.** Off the critical path.
 - **Never loses exit events** — durable queue + `keepalive` flush on page hide.
-- **Anonymous → identified** — before login, behavior is recorded under an anonymous id; `identify()` merges it into the user, and `reset()` starts a new anonymous visitor.
+- **Anonymous → identified** — before login, behavior is recorded under an anonymous id; `identify()` merges it into the user. `reset()` after a sign-in starts a new anonymous visitor; `reset()` with no user does nothing, so it is safe to call on every signed-out state.
 - **Identify on every load** — when a user id is stored from an earlier visit, the SDK sends one identify for that user about 2 seconds after load (skipped when your app identifies the same user first, or when the same identify went out less than 24 hours ago). Users who signed in before you installed the SDK are not known to it: call `identify()` on session restore.
 - **App language** — `setAppLanguage(tag)` stores the language the user picked in your product (BCP 47; `_` becomes `-`) and sends it as `traits.app_language`; every later identify carries it, and your own `traits.app_language` wins. Before login it goes to the anonymous visitor. `setAppLanguage(null)` clears the stored value.
 - **Versions on every event** — each event's `context` carries `platform: "web"`, `sdk_name`, `sdk_version`, and `app_version` / `app_build` when you set the `appVersion` / `appBuild` options. The SDK never sets `context.locale`; pass it yourself to set the language of one event.

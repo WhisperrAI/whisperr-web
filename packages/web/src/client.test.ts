@@ -347,6 +347,57 @@ describe("consent + reset", () => {
     expect(ev.anonymous_id).not.toBe(first);
   });
 
+  it("reset() with no user keeps the handle, so identify() promotes the one handle", async () => {
+    // An app that calls reset() on every signed-out state: before the fix each
+    // call minted a new anonymous visitor and identify() promoted only the last.
+    const w = makeClient();
+    for (let i = 0; i < 3; i++) {
+      w.track("pricing_viewed");
+      await w.flush(); // sent under the anonymous handle
+      w.reset();
+    }
+    w.identify("u1");
+    await w.flush();
+    const events = captured.filter((c) => c.path === "/v1/events/batch").flatMap((c) => c.body.events);
+    const handles = new Set(events.map((e: any) => e.anonymous_id));
+    expect(handles.size).toBe(1);
+    const identify = captured.find((c) => c.path === "/v1/identify")!.body;
+    expect(identify.anonymous_id).toBe([...handles][0]);
+  });
+
+  it("reset() after identify() rotates once; a second reset() keeps the new handle", async () => {
+    const w = makeClient();
+    w.track("a");
+    w.identify("u1");
+    w.reset();
+    w.track("b");
+    w.reset();
+    w.track("c");
+    await w.flush();
+    const events = captured.filter((c) => c.path === "/v1/events/batch").flatMap((c) => c.body.events);
+    const byType = (t: string) => events.find((e: any) => e.event_type === t);
+    expect(byType("b").anonymous_id).not.toBe(byType("a").anonymous_id);
+    expect(byType("c").anonymous_id).toBe(byType("b").anonymous_id);
+    expect(byType("c")).not.toHaveProperty("external_user_id");
+  });
+
+  it("reset() after a reload with a stored user still logs out", async () => {
+    const first = makeClient();
+    first.identify("u1");
+    first.track("a");
+    await first.flush();
+    const before = captured.find((c) => c.path === "/v1/events/batch")!.body.events[0].anonymous_id;
+    captured = [];
+    const w = makeClient(); // the stored user is restored at construction
+    w.reset();
+    w.track("b");
+    await w.flush();
+    const ev = captured.find((c) => c.path === "/v1/events/batch")!.body.events[0];
+    expect(ev).not.toHaveProperty("external_user_id");
+    expect(ev.anonymous_id).toMatch(UUID_V4);
+    expect(ev.anonymous_id).not.toBe(before);
+  });
+
   it("events queued before reset() keep the identity they were tracked under", async () => {
     const w = makeClient();
     w.identify("u1");
